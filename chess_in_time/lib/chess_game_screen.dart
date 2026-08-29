@@ -75,39 +75,49 @@ _Material _computeMaterial(LocalChessEngine engine) {
 
 /// Dibuja una pieza en el tablero según el tema visual activo.
 ///
-/// Feedback de Lucas sobre Medio/Alto: los glifos Unicode de piezas blancas
-/// (♙♘♗♖♕♔) son solo un contorno hueco sin relleno — se pierden contra los
-/// colores de tablero más saturados de esos dos niveles. Para blancas, en
-/// Medio/Alto se usa la misma silueta sólida de las piezas negras (mismo
-/// glifo, la forma ya está resuelta), pero pintada con relleno blanco y
-/// contorno oscuro superpuesto — así se ve una pieza blanca real, no un
-/// esbozo fino. Básico y las piezas negras no se tocan.
-Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme, bool applyWhiteFix) {
+/// Segunda vuelta de feedback de Lucas: el intento anterior (Paint con
+/// PaintingStyle.stroke) seguía TODOS los sub-trazos internos de cada
+/// glifo, no solo el contorno exterior — el trazo terminaba tapando el
+/// relleno blanco y las piezas blancas se veían negras. Además, usar un
+/// glifo distinto por color (el set hueco de blancas vs. el sólido de
+/// negras) es, literalmente, "un modelo distinto" para cada bando.
+///
+/// Acá, para Medio/Alto, blancas y negras usan el mismo glifo sólido —
+/// una sola línea de diseño — y se diferencian solo por color de relleno.
+/// El contorno se arma a mano con copias del mismo texto desplazadas unos
+/// píxeles alrededor (la técnica clásica de "stroke" de texto), que no
+/// depende de cómo la fuente componga los sub-trazos del glifo. Básico
+/// sigue con el set clásico hueco/sólido sin tocar.
+Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme, bool unifiedStyle) {
   final shadows = theme.pieceShadow
       ? const [Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(1, 1))]
       : null;
 
-  if (piece.color == PieceColor.white && applyWhiteFix) {
-    final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta, ahora rellenable
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Text(
-          glyph,
-          style: TextStyle(
-            fontSize: 27,
-            foreground: Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 3
-              ..color = Colors.black87,
-          ),
-        ),
-        Text(glyph, style: TextStyle(fontSize: 27, color: Colors.white, shadows: shadows)),
-      ],
-    );
+  if (!unifiedStyle) {
+    return Text(_symbols[piece.color]![piece.type]!, style: TextStyle(fontSize: 26, shadows: shadows));
   }
 
-  return Text(_symbols[piece.color]![piece.type]!, style: TextStyle(fontSize: 26, shadows: shadows));
+  final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta para las dos, un solo estilo
+  final isWhite = piece.color == PieceColor.white;
+  final fill = isWhite ? Colors.white : const Color(0xFF1A1A1A);
+  final outline = isWhite ? Colors.black87 : Colors.white70;
+
+  const outlineOffsets = [
+    Offset(-1.3, 0), Offset(1.3, 0), Offset(0, -1.3), Offset(0, 1.3),
+    Offset(-1.0, -1.0), Offset(1.0, -1.0), Offset(-1.0, 1.0), Offset(1.0, 1.0),
+  ];
+
+  return Stack(
+    alignment: Alignment.center,
+    children: [
+      for (final o in outlineOffsets)
+        Transform.translate(
+          offset: o,
+          child: Text(glyph, style: TextStyle(fontSize: 26, color: outline)),
+        ),
+      Text(glyph, style: TextStyle(fontSize: 26, color: fill, shadows: shadows)),
+    ],
+  );
 }
 
 /// Motivo de cierre que no viene del motor de ajedrez (jaque mate/ahogado/
@@ -458,40 +468,47 @@ class _BoardArea extends StatelessWidget {
 
     Widget content = grid;
     if (theme.showCoordinates) {
+      // Márgenes simétricos en las 4 puntas (aunque solo izquierda/abajo
+      // lleven texto) para que el tablero en sí quede centrado — antes las
+      // etiquetas solo restaban espacio de un lado y corrían la grilla
+      // hacia arriba/derecha.
+      const labelThickness = 16.0;
       content = AspectRatio(
         aspectRatio: 1,
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 14,
-                    child: Column(
-                      children: _ranks
-                          .map((r) => Expanded(
-                                child: Center(child: Text(r, style: TextStyle(fontSize: 10, color: theme.frameColor))),
-                              ))
-                          .toList(),
-                    ),
-                  ),
-                  Expanded(child: grid),
-                ],
+            Positioned(
+              left: labelThickness,
+              right: labelThickness,
+              top: labelThickness,
+              bottom: labelThickness,
+              child: grid,
+            ),
+            Positioned(
+              left: 0,
+              width: labelThickness,
+              top: labelThickness,
+              bottom: labelThickness,
+              child: Column(
+                children: _ranks
+                    .map((r) => Expanded(
+                          child: Center(child: Text(r, style: TextStyle(fontSize: 10, color: theme.frameColor))),
+                        ))
+                    .toList(),
               ),
             ),
-            Row(
-              children: [
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Row(
-                    children: _files
-                        .map((f) => Expanded(
-                              child: Center(child: Text(f, style: TextStyle(fontSize: 10, color: theme.frameColor))),
-                            ))
-                        .toList(),
-                  ),
-                ),
-              ],
+            Positioned(
+              left: labelThickness,
+              right: labelThickness,
+              bottom: 0,
+              height: labelThickness,
+              child: Row(
+                children: _files
+                    .map((f) => Expanded(
+                          child: Center(child: Text(f, style: TextStyle(fontSize: 10, color: theme.frameColor))),
+                        ))
+                    .toList(),
+              ),
             ),
           ],
         ),
