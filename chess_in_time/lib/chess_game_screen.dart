@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'local_chess_engine.dart';
 import 'fischer_clock.dart';
 import 'board_theme.dart';
+import 'piece_icons.dart';
 
 /// ---------------------------------------------------------------------------
 /// CHESS IN TIME — FASE 3
@@ -11,16 +12,11 @@ import 'board_theme.dart';
 /// sin modificarlos.
 /// ---------------------------------------------------------------------------
 
-const Map<PieceColor, Map<PieceType, String>> _symbols = {
-  PieceColor.white: {
-    PieceType.pawn: '♙', PieceType.knight: '♘', PieceType.bishop: '♗',
-    PieceType.rook: '♖', PieceType.queen: '♕', PieceType.king: '♔',
-  },
-  PieceColor.black: {
-    PieceType.pawn: '♟', PieceType.knight: '♞', PieceType.bishop: '♝',
-    PieceType.rook: '♜', PieceType.queen: '♛', PieceType.king: '♚',
-  },
-};
+/// Colores de relleno/contorno del set de piezas propio (piece_icons.dart).
+/// Un solo tratamiento para las 6 figuras y las dos piezas, en cualquier
+/// tema de tablero -- nada de glifos de fuente, nada de placas de fondo.
+Color _pieceFill(PieceColor color) => color == PieceColor.white ? Colors.white : const Color(0xFF1A1A1A);
+Color _pieceOutline(PieceColor color) => color == PieceColor.white ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5);
 
 const Map<PieceType, int> _pieceValue = {
   PieceType.pawn: 1,
@@ -73,34 +69,20 @@ _Material _computeMaterial(LocalChessEngine engine) {
   return _Material(capturedByWhite, capturedByBlack, diff);
 }
 
-/// Dibuja una pieza en el tablero.
+/// Dibuja una pieza en el tablero, en cualquier tema.
 ///
-/// Clásico usa siempre el set Unicode tal cual — nunca fue el problema y no
-/// se toca. La causa real del reclamo de Lucas ("las blancas se ven
-/// transparentes"): el glifo Unicode de pieza blanca (♔♕♖♗♘♙) es un
-/// contorno hueco sin relleno por diseño — en Clásico se disimula porque el
-/// fondo es casi blanco, pero contra una casilla de color queda expuesto.
-///
-/// Los otros 4 temas (theme.usePieceBadge) usan la técnica que quedó
-/// probada y funcionando: silueta sólida (la misma forma para las dos,
-/// ♟♞♝♜♛♚) coloreada de blanco/negro real, sobre una placa circular de
-/// fondo — el contraste queda garantizado sin depender de la geometría
-/// hueca del glifo blanco. Una sola capa de texto, sin superponer dos
-/// (eso fue lo que falló en los intentos anteriores por desalineación).
-Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme) {
-  if (!theme.usePieceBadge) {
-    return Text(_symbols[piece.color]![piece.type]!, style: const TextStyle(fontSize: 26));
-  }
-  final isWhite = piece.color == PieceColor.white;
-  final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta para las dos
-  final fill = isWhite ? Colors.white : const Color(0xFF1A1A1A);
-  final badge = isWhite ? theme.whiteBadgeColor : theme.blackBadgeColor;
-  return Container(
-    width: 30,
-    height: 30,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(shape: BoxShape.circle, color: badge),
-    child: Text(glyph, style: TextStyle(fontSize: 23, color: fill)),
+/// Por pedido de Lucas: se abandona por completo el glifo Unicode de
+/// ajedrez y la placa circular de fondo (las dos técnicas anteriores, que
+/// dieron problemas de contraste una y otra vez). Ahora es el set propio
+/// de piece_icons.dart -- formas vectoriales simples dibujadas a mano, con
+/// relleno y contorno bajo control total. Un solo tratamiento en los 5
+/// temas de tablero.
+Widget _pieceGlyph(ChessPiece piece) {
+  return PieceIcon(
+    type: piece.type,
+    fill: _pieceFill(piece.color),
+    outline: _pieceOutline(piece.color),
+    size: 28,
   );
 }
 
@@ -216,7 +198,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
           children: [PieceType.queen, PieceType.rook, PieceType.bishop, PieceType.knight]
               .map((t) => IconButton(
                     iconSize: 36,
-                    icon: Text(_symbols[engine.turn]![t]!, style: const TextStyle(fontSize: 32)),
+                    icon: PieceIcon(type: t, fill: _pieceFill(engine.turn), outline: _pieceOutline(engine.turn), size: 32),
                     onPressed: () => Navigator.of(ctx).pop(t),
                   ))
               .toList(),
@@ -383,7 +365,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                             Container(decoration: _squareDecoration(r, c, theme, isSelected, isLastMove)),
                             if (isLastMove && theme.lastMoveHighlight != null)
                               Container(color: theme.lastMoveHighlight),
-                            if (piece != null) _pieceGlyph(piece, theme),
+                            if (piece != null) _pieceGlyph(piece),
                             if (isTarget)
                               isCapture
                                   ? Container(
@@ -543,18 +525,23 @@ class _CapturedRow extends StatelessWidget {
   }
 
   Widget _side(List<PieceType> captured, PieceColor capturedColor, int lead, Alignment align) {
-    final symbols = captured.map((t) => _symbols[capturedColor]![t]!).join(' ');
-    final text = lead > 0 ? '$symbols  +$lead' : symbols;
     return Align(
       alignment: align,
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 14,
-          color: Colors.grey.shade700,
-          fontWeight: lead > 0 ? FontWeight.bold : FontWeight.normal,
-        ),
-        overflow: TextOverflow.ellipsis,
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 2,
+        children: [
+          for (final t in captured)
+            PieceIcon(type: t, fill: _pieceFill(capturedColor), outline: _pieceOutline(capturedColor), size: 14),
+          if (lead > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                '+$lead',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green),
+              ),
+            ),
+        ],
       ),
     );
   }
