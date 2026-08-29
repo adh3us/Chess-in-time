@@ -73,42 +73,18 @@ _Material _computeMaterial(LocalChessEngine engine) {
   return _Material(capturedByWhite, capturedByBlack, diff);
 }
 
-/// Dibuja una pieza en el tablero según el tema visual activo.
+/// Dibuja una pieza en el tablero.
 ///
-/// Tercera vuelta de feedback de Lucas: el intento del contorno "a mano"
-/// (copias del glifo desplazadas) seguía viéndose mal, porque estos glifos
-/// tienen muchos contornos internos chicos (las puntas de una corona, la
-/// crin del caballo) — a tamaño de pieza, el contorno terminaba tapando
-/// casi toda la silueta de nuevo, cualquiera sea la técnica de trazo.
-///
-/// En vez de perseguir el contorno del glifo, la pieza ahora va sobre un
-/// círculo de fondo — oscuro detrás de las blancas, claro detrás de las
-/// negras — que da contraste garantizado sin depender de la geometría
-/// interna del carácter. Blancas y negras comparten el mismo glifo sólido
-/// y el mismo tratamiento (círculo + relleno), solo cambian los colores:
-/// es la misma línea de diseño para las dos. Básico sigue con el set
-/// clásico hueco/sólido sin tocar.
-Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme, bool unifiedStyle) {
-  final shadows = theme.pieceShadow
-      ? const [Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(1, 1))]
-      : null;
-
-  if (!unifiedStyle) {
-    return Text(_symbols[piece.color]![piece.type]!, style: TextStyle(fontSize: 26, shadows: shadows));
-  }
-
-  final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta para las dos, un solo estilo
-  final isWhite = piece.color == PieceColor.white;
-  final fill = isWhite ? Colors.white : const Color(0xFF1A1A1A);
-  final pad = isWhite ? Colors.black.withAlpha(130) : Colors.white.withAlpha(150);
-
-  return Container(
-    width: 32,
-    height: 32,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(shape: BoxShape.circle, color: pad),
-    child: Text(glyph, style: TextStyle(fontSize: 23, color: fill, shadows: shadows)),
-  );
+/// Vuelta a foja cero por decisión de Lucas: los tres intentos de darle un
+/// estilo distinto a las piezas en Medio/Alto (glifo hueco relleno,
+/// contorno con copias desplazadas, círculo de fondo) terminaron en el
+/// mismo problema de contraste una y otra vez, y Medio se sacó del todo.
+/// Las piezas se dibujan siempre igual, en cualquier nivel — es el set
+/// clásico que ya venía funcionando desde la Fase 2/3 y nunca fue el
+/// problema. Alto se diferencia solo por el tablero (colores, marco,
+/// coordenadas), no por las piezas.
+Widget _pieceGlyph(ChessPiece piece) {
+  return Text(_symbols[piece.color]![piece.type]!, style: const TextStyle(fontSize: 26));
 }
 
 /// Motivo de cierre que no viene del motor de ajedrez (jaque mate/ahogado/
@@ -382,7 +358,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                             Container(decoration: _squareDecoration(r, c, theme, isSelected, isLastMove)),
                             if (isLastMove && theme.lastMoveHighlight != null)
                               Container(color: theme.lastMoveHighlight),
-                            if (piece != null) _pieceGlyph(piece, theme, _visual != BoardVisual.basico),
+                            if (piece != null) _pieceGlyph(piece),
                             if (isTarget)
                               isCapture
                                   ? Container(
