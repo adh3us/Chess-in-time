@@ -75,27 +75,33 @@ _Material _computeMaterial(LocalChessEngine engine) {
 
 /// Dibuja una pieza en el tablero.
 ///
-/// Básico usa siempre el set clásico tal cual — nunca fue el problema y no
+/// Clásico usa siempre el set Unicode tal cual — nunca fue el problema y no
 /// se toca. La causa real del reclamo de Lucas ("las blancas se ven
 /// transparentes"): el glifo Unicode de pieza blanca (♔♕♖♗♘♙) es un
-/// contorno hueco sin relleno por diseño — en Básico se disimula porque el
-/// fondo es casi blanco, pero en Alto queda expuesto. La solución ahora es
-/// de una sola capa (nada de superponer dos textos, que fue lo que falló
-/// antes por desalineación): en Alto, las blancas usan la silueta sólida
-/// (la misma forma que las negras) coloreada de blanco real, sobre un
-/// círculo oscuro de fondo. Las negras no se tocan en ningún nivel.
-Widget _pieceGlyph(ChessPiece piece, bool solidWhiteOnAlto) {
-  if (piece.color == PieceColor.white && solidWhiteOnAlto) {
-    final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta, coloreada de blanco
-    return Container(
-      width: 30,
-      height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withAlpha(115)),
-      child: Text(glyph, style: const TextStyle(fontSize: 23, color: Colors.white)),
-    );
+/// contorno hueco sin relleno por diseño — en Clásico se disimula porque el
+/// fondo es casi blanco, pero contra una casilla de color queda expuesto.
+///
+/// Los otros 4 temas (theme.usePieceBadge) usan la técnica que quedó
+/// probada y funcionando: silueta sólida (la misma forma para las dos,
+/// ♟♞♝♜♛♚) coloreada de blanco/negro real, sobre una placa circular de
+/// fondo — el contraste queda garantizado sin depender de la geometría
+/// hueca del glifo blanco. Una sola capa de texto, sin superponer dos
+/// (eso fue lo que falló en los intentos anteriores por desalineación).
+Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme) {
+  if (!theme.usePieceBadge) {
+    return Text(_symbols[piece.color]![piece.type]!, style: const TextStyle(fontSize: 26));
   }
-  return Text(_symbols[piece.color]![piece.type]!, style: const TextStyle(fontSize: 26));
+  final isWhite = piece.color == PieceColor.white;
+  final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta para las dos
+  final fill = isWhite ? Colors.white : const Color(0xFF1A1A1A);
+  final badge = isWhite ? theme.whiteBadgeColor : theme.blackBadgeColor;
+  return Container(
+    width: 30,
+    height: 30,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(shape: BoxShape.circle, color: badge),
+    child: Text(glyph, style: TextStyle(fontSize: 23, color: fill)),
+  );
 }
 
 /// Motivo de cierre que no viene del motor de ajedrez (jaque mate/ahogado/
@@ -120,7 +126,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
   Position? _selected;
   List<Move> _legalForSelected = [];
   _ForcedEnd? _forcedEnd;
-  BoardVisual _visual = BoardVisual.basico;
+  BoardVisual _visual = BoardVisual.clasico;
   Move? _lastMove;
 
   @override
@@ -249,6 +255,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
     return BoxDecoration(
       color: gradient == null ? color : null,
       gradient: gradient,
+      borderRadius: theme.squareCornerRadius > 0 ? BorderRadius.circular(theme.squareCornerRadius) : null,
       border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
     );
   }
@@ -292,12 +299,19 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
           children: [
             const Text('Tablero', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            SegmentedButton<BoardVisual>(
-              segments: BoardVisual.values
-                  .map((v) => ButtonSegment(value: v, label: Text(boardThemes[v]!.label)))
-                  .toList(),
-              selected: {_visual},
-              onSelectionChanged: (s) => setState(() => _visual = s.first),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: BoardVisual.values.map((v) {
+                final t = boardThemes[v]!;
+                final selected = _visual == v;
+                return ChoiceChip(
+                  selected: selected,
+                  onSelected: (_) => setState(() => _visual = v),
+                  avatar: CircleAvatar(backgroundColor: t.darkSquare),
+                  label: Text(t.label),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 4),
             Text(
@@ -369,7 +383,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                             Container(decoration: _squareDecoration(r, c, theme, isSelected, isLastMove)),
                             if (isLastMove && theme.lastMoveHighlight != null)
                               Container(color: theme.lastMoveHighlight),
-                            if (piece != null) _pieceGlyph(piece, _visual == BoardVisual.alto),
+                            if (piece != null) _pieceGlyph(piece, theme),
                             if (isTarget)
                               isCapture
                                   ? Container(
