@@ -75,15 +75,26 @@ _Material _computeMaterial(LocalChessEngine engine) {
 
 /// Dibuja una pieza en el tablero.
 ///
-/// Vuelta a foja cero por decisión de Lucas: los tres intentos de darle un
-/// estilo distinto a las piezas en Medio/Alto (glifo hueco relleno,
-/// contorno con copias desplazadas, círculo de fondo) terminaron en el
-/// mismo problema de contraste una y otra vez, y Medio se sacó del todo.
-/// Las piezas se dibujan siempre igual, en cualquier nivel — es el set
-/// clásico que ya venía funcionando desde la Fase 2/3 y nunca fue el
-/// problema. Alto se diferencia solo por el tablero (colores, marco,
-/// coordenadas), no por las piezas.
-Widget _pieceGlyph(ChessPiece piece) {
+/// Básico usa siempre el set clásico tal cual — nunca fue el problema y no
+/// se toca. La causa real del reclamo de Lucas ("las blancas se ven
+/// transparentes"): el glifo Unicode de pieza blanca (♔♕♖♗♘♙) es un
+/// contorno hueco sin relleno por diseño — en Básico se disimula porque el
+/// fondo es casi blanco, pero en Alto queda expuesto. La solución ahora es
+/// de una sola capa (nada de superponer dos textos, que fue lo que falló
+/// antes por desalineación): en Alto, las blancas usan la silueta sólida
+/// (la misma forma que las negras) coloreada de blanco real, sobre un
+/// círculo oscuro de fondo. Las negras no se tocan en ningún nivel.
+Widget _pieceGlyph(ChessPiece piece, bool solidWhiteOnAlto) {
+  if (piece.color == PieceColor.white && solidWhiteOnAlto) {
+    final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta, coloreada de blanco
+    return Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withAlpha(115)),
+      child: Text(glyph, style: const TextStyle(fontSize: 23, color: Colors.white)),
+    );
+  }
   return Text(_symbols[piece.color]![piece.type]!, style: const TextStyle(fontSize: 26));
 }
 
@@ -358,7 +369,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                             Container(decoration: _squareDecoration(r, c, theme, isSelected, isLastMove)),
                             if (isLastMove && theme.lastMoveHighlight != null)
                               Container(color: theme.lastMoveHighlight),
-                            if (piece != null) _pieceGlyph(piece),
+                            if (piece != null) _pieceGlyph(piece, _visual == BoardVisual.alto),
                             if (isTarget)
                               isCapture
                                   ? Container(
