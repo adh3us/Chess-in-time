@@ -8,6 +8,9 @@ on:
       - ".github/workflows/build-apk.yml"
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,3 +44,14 @@ jobs:
           name: chess-in-time-apk
           path: chess_in_time/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      - name: Publish APK as GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: "Chess in Time (build automático)"
+          body: "APK generado automáticamente por Actions desde el commit ${{ github.sha }}."
+          files: chess_in_time/build/app/outputs/flutter-apk/app-release.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
