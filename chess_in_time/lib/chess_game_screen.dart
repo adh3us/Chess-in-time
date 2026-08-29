@@ -21,6 +21,57 @@ const Map<PieceColor, Map<PieceType, String>> _symbols = {
   },
 };
 
+const Map<PieceType, int> _pieceValue = {
+  PieceType.pawn: 1,
+  PieceType.knight: 3,
+  PieceType.bishop: 3,
+  PieceType.rook: 5,
+  PieceType.queen: 9,
+  PieceType.king: 0,
+};
+
+const Map<PieceType, int> _startCount = {
+  PieceType.pawn: 8,
+  PieceType.knight: 2,
+  PieceType.bishop: 2,
+  PieceType.rook: 2,
+  PieceType.queen: 1,
+  PieceType.king: 1,
+};
+
+/// Piezas capturadas por cada color y diferencial de material (Fase 4),
+/// derivados de comparar el tablero actual contra el conteo inicial — no
+/// hace falta que el motor lleve su propio historial de capturas.
+class _Material {
+  final List<PieceType> capturedByWhite; // piezas negras que blancas capturó
+  final List<PieceType> capturedByBlack; // piezas blancas que negras capturó
+  final int diff; // positivo = blancas arriba en material
+  const _Material(this.capturedByWhite, this.capturedByBlack, this.diff);
+}
+
+_Material _computeMaterial(LocalChessEngine engine) {
+  final onBoard = {PieceColor.white: <PieceType, int>{}, PieceColor.black: <PieceType, int>{}};
+  for (var r = 0; r < 8; r++) {
+    for (var c = 0; c < 8; c++) {
+      final p = engine.board[r][c];
+      if (p == null) continue;
+      onBoard[p.color]![p.type] = (onBoard[p.color]![p.type] ?? 0) + 1;
+    }
+  }
+  final capturedByWhite = <PieceType>[];
+  final capturedByBlack = <PieceType>[];
+  var diff = 0;
+  for (final entry in _startCount.entries) {
+    final type = entry.key;
+    final missingBlack = entry.value - (onBoard[PieceColor.black]![type] ?? 0);
+    final missingWhite = entry.value - (onBoard[PieceColor.white]![type] ?? 0);
+    capturedByWhite.addAll(List.filled(missingBlack, type));
+    capturedByBlack.addAll(List.filled(missingWhite, type));
+    diff += (missingBlack - missingWhite) * _pieceValue[type]!;
+  }
+  return _Material(capturedByWhite, capturedByBlack, diff);
+}
+
 /// Motivo de cierre que no viene del motor de ajedrez (jaque mate/ahogado/
 /// tablas), sino de la capa de partida: se acabó el tiempo, o alguien se rindió.
 class _ForcedEnd {
@@ -231,6 +282,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
       body: Column(
         children: [
           _ClockRow(clock: clock, running: !gameOver),
+          _CapturedRow(material: _computeMaterial(engine)),
           if (status != null)
             Container(
               width: double.infinity,
@@ -306,6 +358,43 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _CapturedRow extends StatelessWidget {
+  final _Material material;
+  const _CapturedRow({required this.material});
+
+  @override
+  Widget build(BuildContext context) {
+    final whiteLead = material.diff > 0 ? material.diff : 0;
+    final blackLead = material.diff < 0 ? -material.diff : 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Row(
+        children: [
+          Expanded(child: _side(material.capturedByBlack, PieceColor.white, blackLead, Alignment.centerLeft)),
+          Expanded(child: _side(material.capturedByWhite, PieceColor.black, whiteLead, Alignment.centerRight)),
+        ],
+      ),
+    );
+  }
+
+  Widget _side(List<PieceType> captured, PieceColor capturedColor, int lead, Alignment align) {
+    final symbols = captured.map((t) => _symbols[capturedColor]![t]!).join(' ');
+    final text = lead > 0 ? '$symbols  +$lead' : symbols;
+    return Align(
+      alignment: align,
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 14,
+          color: Colors.grey.shade700,
+          fontWeight: lead > 0 ? FontWeight.bold : FontWeight.normal,
+        ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
