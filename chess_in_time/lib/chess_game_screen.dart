@@ -3,6 +3,7 @@ import 'local_chess_engine.dart';
 import 'fischer_clock.dart';
 import 'board_theme.dart';
 import 'piece_icons.dart';
+import 'auth_gate.dart';
 
 /// ---------------------------------------------------------------------------
 /// CHESS IN TIME — FASE 3
@@ -275,7 +276,16 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
   Widget build(BuildContext context) {
     if (_modality == null || _engine == null || _clock == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Elegí modalidad')),
+        appBar: AppBar(
+          title: const Text('Elegí modalidad'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.account_circle),
+              tooltip: 'Mi cuenta',
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen())),
+            ),
+          ],
+        ),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
