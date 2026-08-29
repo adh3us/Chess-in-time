@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'local_chess_engine.dart';
 import 'fischer_clock.dart';
+import 'board_theme.dart';
 
 /// ---------------------------------------------------------------------------
 /// CHESS IN TIME — FASE 3
@@ -94,6 +95,8 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
   Position? _selected;
   List<Move> _legalForSelected = [];
   _ForcedEnd? _forcedEnd;
+  BoardVisual _visual = BoardVisual.basico;
+  Move? _lastMove;
 
   @override
   void dispose() {
@@ -109,6 +112,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
       _forcedEnd = null;
       _selected = null;
       _legalForSelected = [];
+      _lastMove = null;
       _clock = FischerClock(
         modality: modality,
         active: engine.turn,
@@ -164,6 +168,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
     setState(() {
       _selected = null;
       _legalForSelected = [];
+      _lastMove = move;
     });
   }
 
@@ -212,7 +217,16 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
     }
   }
 
-  Color _squareColor(int r, int c) => (r + c).isEven ? Colors.grey.shade100 : Colors.grey.shade300;
+  BoxDecoration _squareDecoration(int r, int c, BoardThemeConfig theme, bool isSelected, bool isLastMove) {
+    final isLight = (r + c).isEven;
+    final gradient = isLight ? theme.lightSquareGradient : theme.darkSquareGradient;
+    final color = isLight ? theme.lightSquare : theme.darkSquare;
+    return BoxDecoration(
+      color: gradient == null ? color : null,
+      gradient: gradient,
+      border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
+    );
+  }
 
   String? _statusMessage() {
     if (_forcedEnd != null) {
@@ -250,14 +264,31 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
         appBar: AppBar(title: const Text('Elegí modalidad')),
         body: ListView(
           padding: const EdgeInsets.all(16),
-          children: ClockModality.all
-              .map((m) => Card(
-                    child: ListTile(
-                      title: Text(m.label),
-                      onTap: () => _startGame(m),
-                    ),
-                  ))
-              .toList(),
+          children: [
+            const Text('Tablero', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            SegmentedButton<BoardVisual>(
+              segments: BoardVisual.values
+                  .map((v) => ButtonSegment(value: v, label: Text(boardThemes[v]!.label)))
+                  .toList(),
+              selected: {_visual},
+              onSelectionChanged: (s) => setState(() => _visual = s.first),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              boardThemes[_visual]!.description,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 24),
+            const Text('Modalidad de tiempo', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            ...ClockModality.all.map((m) => Card(
+                  child: ListTile(
+                    title: Text(m.label),
+                    onTap: () => _startGame(m),
+                  ),
+                )),
+          ],
         ),
       );
     }
@@ -292,34 +323,44 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
             ),
           Expanded(
             child: Center(
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 8),
-                  itemCount: 64,
-                  itemBuilder: (context, index) {
-                    final r = index ~/ 8;
-                    final c = index % 8;
-                    final pos = Position(r, c);
-                    final piece = engine.pieceAt(pos);
-                    final isSelected = _selected == pos;
-                    final targetMove = _legalForSelected.where((m) => m.to == pos).toList();
-                    final isTarget = targetMove.isNotEmpty;
-                    final isCapture = isTarget && (piece != null || targetMove.first.isEnPassant);
+              child: _BoardArea(
+                theme: boardThemes[_visual]!,
+                boardBuilder: () => AspectRatio(
+                  aspectRatio: 1,
+                  child: GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 8),
+                    itemCount: 64,
+                    itemBuilder: (context, index) {
+                      final r = index ~/ 8;
+                      final c = index % 8;
+                      final pos = Position(r, c);
+                      final piece = engine.pieceAt(pos);
+                      final isSelected = _selected == pos;
+                      final isLastMove = _lastMove != null && (_lastMove!.from == pos || _lastMove!.to == pos);
+                      final targetMove = _legalForSelected.where((m) => m.to == pos).toList();
+                      final isTarget = targetMove.isNotEmpty;
+                      final isCapture = isTarget && (piece != null || targetMove.first.isEnPassant);
+                      final theme = boardThemes[_visual]!;
 
-                    return GestureDetector(
-                      onTap: gameOver ? null : () => _selectSquare(pos),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: _squareColor(r, c),
-                          border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
-                        ),
+                      return GestureDetector(
+                        onTap: gameOver ? null : () => _selectSquare(pos),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
+                            Container(decoration: _squareDecoration(r, c, theme, isSelected, isLastMove)),
+                            if (isLastMove && theme.lastMoveHighlight != null)
+                              Container(color: theme.lastMoveHighlight),
                             if (piece != null)
-                              Text(_symbols[piece.color]![piece.type]!, style: const TextStyle(fontSize: 26)),
+                              Text(
+                                _symbols[piece.color]![piece.type]!,
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  shadows: theme.pieceShadow
+                                      ? [const Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(1, 1))]
+                                      : null,
+                                ),
+                              ),
                             if (isTarget)
                               isCapture
                                   ? Container(
@@ -336,9 +377,9 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                                     ),
                           ],
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -360,6 +401,79 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
         ],
       ),
     );
+  }
+}
+
+/// Envoltorio del tablero que agrega, según el tema elegido, coordenadas
+/// a-h/1-8 y un marco con relieve — puramente decorativo, no toca la
+/// grilla de juego que le pasan por [boardBuilder].
+class _BoardArea extends StatelessWidget {
+  final BoardThemeConfig theme;
+  final Widget Function() boardBuilder;
+  const _BoardArea({required this.theme, required this.boardBuilder});
+
+  static const _files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  static const _ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
+
+  @override
+  Widget build(BuildContext context) {
+    final grid = boardBuilder();
+
+    Widget content = grid;
+    if (theme.showCoordinates) {
+      content = AspectRatio(
+        aspectRatio: 1,
+        child: Column(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 14,
+                    child: Column(
+                      children: _ranks
+                          .map((r) => Expanded(
+                                child: Center(child: Text(r, style: TextStyle(fontSize: 10, color: theme.frameColor))),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                  Expanded(child: grid),
+                ],
+              ),
+            ),
+            Row(
+              children: [
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Row(
+                    children: _files
+                        .map((f) => Expanded(
+                              child: Center(child: Text(f, style: TextStyle(fontSize: 10, color: theme.frameColor))),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (theme.framed) {
+      content = Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: theme.frameColor,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 4))],
+        ),
+        child: content,
+      );
+    }
+
+    return content;
   }
 }
 
