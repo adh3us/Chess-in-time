@@ -75,19 +75,19 @@ _Material _computeMaterial(LocalChessEngine engine) {
 
 /// Dibuja una pieza en el tablero según el tema visual activo.
 ///
-/// Segunda vuelta de feedback de Lucas: el intento anterior (Paint con
-/// PaintingStyle.stroke) seguía TODOS los sub-trazos internos de cada
-/// glifo, no solo el contorno exterior — el trazo terminaba tapando el
-/// relleno blanco y las piezas blancas se veían negras. Además, usar un
-/// glifo distinto por color (el set hueco de blancas vs. el sólido de
-/// negras) es, literalmente, "un modelo distinto" para cada bando.
+/// Tercera vuelta de feedback de Lucas: el intento del contorno "a mano"
+/// (copias del glifo desplazadas) seguía viéndose mal, porque estos glifos
+/// tienen muchos contornos internos chicos (las puntas de una corona, la
+/// crin del caballo) — a tamaño de pieza, el contorno terminaba tapando
+/// casi toda la silueta de nuevo, cualquiera sea la técnica de trazo.
 ///
-/// Acá, para Medio/Alto, blancas y negras usan el mismo glifo sólido —
-/// una sola línea de diseño — y se diferencian solo por color de relleno.
-/// El contorno se arma a mano con copias del mismo texto desplazadas unos
-/// píxeles alrededor (la técnica clásica de "stroke" de texto), que no
-/// depende de cómo la fuente componga los sub-trazos del glifo. Básico
-/// sigue con el set clásico hueco/sólido sin tocar.
+/// En vez de perseguir el contorno del glifo, la pieza ahora va sobre un
+/// círculo de fondo — oscuro detrás de las blancas, claro detrás de las
+/// negras — que da contraste garantizado sin depender de la geometría
+/// interna del carácter. Blancas y negras comparten el mismo glifo sólido
+/// y el mismo tratamiento (círculo + relleno), solo cambian los colores:
+/// es la misma línea de diseño para las dos. Básico sigue con el set
+/// clásico hueco/sólido sin tocar.
 Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme, bool unifiedStyle) {
   final shadows = theme.pieceShadow
       ? const [Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(1, 1))]
@@ -100,23 +100,14 @@ Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme, bool unifiedStyle) 
   final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta para las dos, un solo estilo
   final isWhite = piece.color == PieceColor.white;
   final fill = isWhite ? Colors.white : const Color(0xFF1A1A1A);
-  final outline = isWhite ? Colors.black87 : Colors.white70;
+  final pad = isWhite ? Colors.black.withAlpha(130) : Colors.white.withAlpha(150);
 
-  const outlineOffsets = [
-    Offset(-1.3, 0), Offset(1.3, 0), Offset(0, -1.3), Offset(0, 1.3),
-    Offset(-1.0, -1.0), Offset(1.0, -1.0), Offset(-1.0, 1.0), Offset(1.0, 1.0),
-  ];
-
-  return Stack(
+  return Container(
+    width: 32,
+    height: 32,
     alignment: Alignment.center,
-    children: [
-      for (final o in outlineOffsets)
-        Transform.translate(
-          offset: o,
-          child: Text(glyph, style: TextStyle(fontSize: 26, color: outline)),
-        ),
-      Text(glyph, style: TextStyle(fontSize: 26, color: fill, shadows: shadows)),
-    ],
+    decoration: BoxDecoration(shape: BoxShape.circle, color: pad),
+    child: Text(glyph, style: TextStyle(fontSize: 23, color: fill, shadows: shadows)),
   );
 }
 
