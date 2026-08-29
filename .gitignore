@@ -1,0 +1,9 @@
+chess_in_time/build/
+chess_in_time/.dart_tool/
+chess_in_time/.flutter-plugins
+chess_in_time/.flutter-plugins-dependencies
+chess_in_time/android/.gradle/
+chess_in_time/android/local.properties
+chess_in_time/ios/Flutter/.last_build_id
+chess_in_time/.idea/
+*.iml
