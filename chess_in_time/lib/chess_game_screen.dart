@@ -73,6 +73,43 @@ _Material _computeMaterial(LocalChessEngine engine) {
   return _Material(capturedByWhite, capturedByBlack, diff);
 }
 
+/// Dibuja una pieza en el tablero según el tema visual activo.
+///
+/// Feedback de Lucas sobre Medio/Alto: los glifos Unicode de piezas blancas
+/// (♙♘♗♖♕♔) son solo un contorno hueco sin relleno — se pierden contra los
+/// colores de tablero más saturados de esos dos niveles. Para blancas, en
+/// Medio/Alto se usa la misma silueta sólida de las piezas negras (mismo
+/// glifo, la forma ya está resuelta), pero pintada con relleno blanco y
+/// contorno oscuro superpuesto — así se ve una pieza blanca real, no un
+/// esbozo fino. Básico y las piezas negras no se tocan.
+Widget _pieceGlyph(ChessPiece piece, BoardThemeConfig theme, bool applyWhiteFix) {
+  final shadows = theme.pieceShadow
+      ? const [Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(1, 1))]
+      : null;
+
+  if (piece.color == PieceColor.white && applyWhiteFix) {
+    final glyph = _symbols[PieceColor.black]![piece.type]!; // misma silueta, ahora rellenable
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Text(
+          glyph,
+          style: TextStyle(
+            fontSize: 27,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 3
+              ..color = Colors.black87,
+          ),
+        ),
+        Text(glyph, style: TextStyle(fontSize: 27, color: Colors.white, shadows: shadows)),
+      ],
+    );
+  }
+
+  return Text(_symbols[piece.color]![piece.type]!, style: TextStyle(fontSize: 26, shadows: shadows));
+}
+
 /// Motivo de cierre que no viene del motor de ajedrez (jaque mate/ahogado/
 /// tablas), sino de la capa de partida: se acabó el tiempo, o alguien se rindió.
 class _ForcedEnd {
@@ -302,13 +339,6 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(gameOver ? 'Partida terminada' : 'Turno: $turnLabel'),
-        actions: [
-          if (!gameOver)
-            TextButton(
-              onPressed: _confirmResign,
-              child: const Text('Rendirse', style: TextStyle(color: Colors.white)),
-            ),
-        ],
       ),
       body: Column(
         children: [
@@ -351,16 +381,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                             Container(decoration: _squareDecoration(r, c, theme, isSelected, isLastMove)),
                             if (isLastMove && theme.lastMoveHighlight != null)
                               Container(color: theme.lastMoveHighlight),
-                            if (piece != null)
-                              Text(
-                                _symbols[piece.color]![piece.type]!,
-                                style: TextStyle(
-                                  fontSize: 26,
-                                  shadows: theme.pieceShadow
-                                      ? [const Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(1, 1))]
-                                      : null,
-                                ),
-                              ),
+                            if (piece != null) _pieceGlyph(piece, theme, _visual != BoardVisual.basico),
                             if (isTarget)
                               isCapture
                                   ? Container(
@@ -384,6 +405,22 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
               ),
             ),
           ),
+          if (!gameOver)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _confirmResign,
+                  icon: const Icon(Icons.flag, color: Colors.red),
+                  label: const Text('Rendirse', style: TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ),
           if (gameOver)
             Padding(
               padding: const EdgeInsets.all(12),
