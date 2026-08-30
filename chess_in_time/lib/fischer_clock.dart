@@ -51,7 +51,33 @@ class FischerClock {
         blackRemaining = modality.base,
         increment = modality.increment;
 
+  /// Reanuda un reloj a partir de un estado guardado (partida online): el
+  /// tiempo restante de cada lado ya viene de la base, no de la modalidad.
+  FischerClock.resume({
+    required this.whiteRemaining,
+    required this.blackRemaining,
+    required this.increment,
+    required this.active,
+    required DateTime turnStartedAt,
+    required this.onTick,
+    required this.onTimeout,
+  }) : _turnStartedAt = turnStartedAt;
+
   bool get isRunning => _running;
+
+  /// Sobrescribe el estado del reloj con lo que acaba de llegar del rival
+  /// (partida online): nuevos tiempos restantes y de quién es el turno
+  /// ahora. Reinicia la cuenta desde este instante.
+  void syncFromRemote({
+    required Duration whiteRemaining,
+    required Duration blackRemaining,
+    required PieceColor active,
+  }) {
+    this.whiteRemaining = whiteRemaining;
+    this.blackRemaining = blackRemaining;
+    this.active = active;
+    _turnStartedAt = DateTime.now();
+  }
 
   /// Tiempo restante a mostrar en pantalla para `color`, calculado contra
   /// el reloj real (no acumula error de redondeo).

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'local_chess_engine.dart';
 import 'fischer_clock.dart';
 import 'board_theme.dart';
 import 'piece_icons.dart';
 import 'auth_gate.dart';
+import 'online_match_service.dart';
+import 'supabase_config.dart';
 
 /// ---------------------------------------------------------------------------
 /// CHESS IN TIME — FASE 3
@@ -137,6 +140,15 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
   }
 
   bool get _gameOver => _forcedEnd != null || (_engine?.status ?? GameStatus.ongoing) != GameStatus.ongoing;
+
+  Future<void> _playOnline(ClockModality modality) async {
+    if (supabase.auth.currentUser == null) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()));
+      if (!mounted || supabase.auth.currentUser == null) return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => OnlineLobbyScreen(modality: modality)));
+  }
 
   void _selectSquare(Position pos) {
     final engine = _engine!;
@@ -316,7 +328,23 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
             ...ClockModality.all.map((m) => Card(
                   child: ListTile(
                     title: Text(m.label),
+                    subtitle: const Text('Local, pasa y juega'),
                     onTap: () => _startGame(m),
+                  ),
+                )),
+            const SizedBox(height: 24),
+            const Text('Jugar online', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(
+              'Con la misma cuenta de Gameros. Buscamos un rival real en la modalidad que elijas.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 8),
+            ...ClockModality.all.map((m) => Card(
+                  child: ListTile(
+                    title: Text(m.label),
+                    trailing: const Icon(Icons.public),
+                    onTap: () => _playOnline(m),
                   ),
                 )),
           ],
@@ -589,6 +617,517 @@ class _ClockRow extends StatelessWidget {
           Text(formatClock(remaining), style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: fg)),
         ],
       ),
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------------
+/// CHESS IN TIME — Fase 5: matchmaking online
+///
+/// Busca rival en la modalidad elegida (chess_in_time.buscar_partida). Si ya
+/// hay alguien esperando, arranca la partida al toque; si no, se anota en la
+/// cola y espera -- por Realtime, no por polling -- a que otro jugador la
+/// arme (ve aparecer la fila en `partidas` gracias al RLS ya existente).
+/// ---------------------------------------------------------------------------
+class OnlineLobbyScreen extends StatefulWidget {
+  final ClockModality modality;
+  const OnlineLobbyScreen({super.key, required this.modality});
+
+  @override
+  State<OnlineLobbyScreen> createState() => _OnlineLobbyScreenState();
+}
+
+class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
+  RealtimeChannel? _channel;
+  String? _error;
+  bool _navigated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _buscar();
+  }
+
+  Future<void> _buscar() async {
+    final key = modalidadKey(widget.modality);
+    try {
+      final partida = await buscarPartida(key);
+      if (!mounted) return;
+      if (partida != null) {
+        _goToGame(partida);
+        return;
+      }
+      final myId = supabase.auth.currentUser!.id;
+      _channel = suscribirsePartida(
+        channelName: 'espera_$myId',
+        event: PostgresChangeEvent.insert,
+        onChange: (row) {
+          if (row['jugador_blancas'] == myId || row['jugador_negras'] == myId) {
+            _goToGame(row);
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) setState(() => _error = 'No se pudo buscar partida: $e');
+    }
+  }
+
+  void _goToGame(Map<String, dynamic> partida) {
+    if (_navigated) return;
+    _navigated = true;
+    _channel?.unsubscribe();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => OnlineGameScreen(partida: partida)),
+    );
+  }
+
+  Future<void> _cancelar() async {
+    await cancelarBusqueda();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Jugar online · ${widget.modality.label}')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: _error != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Volver')),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 24),
+                    const Text('Buscando rival...'),
+                    const SizedBox(height: 24),
+                    OutlinedButton(onPressed: _cancelar, child: const Text('Cancelar')),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------------
+/// CHESS IN TIME — Fase 5: partida online
+///
+/// Mismo tablero/reloj/HUD que el juego local, pero las jugadas se validan
+/// igual en los dos dispositivos y se sincronizan por Realtime en vez de
+/// compartir pantalla. El estado del reloj viaja en la fila de `partidas`
+/// (tiempo restante de cada lado) en vez de vivir solo en memoria.
+/// ---------------------------------------------------------------------------
+class OnlineGameScreen extends StatefulWidget {
+  final Map<String, dynamic> partida;
+  const OnlineGameScreen({super.key, required this.partida});
+
+  @override
+  State<OnlineGameScreen> createState() => _OnlineGameScreenState();
+}
+
+class _OnlineGameScreenState extends State<OnlineGameScreen> {
+  late final String _partidaId;
+  late final PieceColor _myColor;
+  late final String _opponentId;
+  late final LocalChessEngine _engine;
+  FischerClock? _clock;
+  RealtimeChannel? _channel;
+  Position? _selected;
+  List<Move> _legalForSelected = [];
+  Move? _lastMove;
+  bool _terminada = false;
+  String? _endMessage;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final row = widget.partida;
+    _partidaId = row['id'] as String;
+    final myId = supabase.auth.currentUser!.id;
+    _myColor = row['jugador_blancas'] == myId ? PieceColor.white : PieceColor.black;
+    _opponentId = _myColor == PieceColor.white ? row['jugador_negras'] as String : row['jugador_blancas'] as String;
+    _engine = LocalChessEngine();
+    _applyRow(row);
+    _channel = suscribirsePartida(
+      channelName: 'partida_$_partidaId',
+      event: PostgresChangeEvent.update,
+      partidaId: _partidaId,
+      onChange: _applyRow,
+    );
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    _clock?.dispose();
+    super.dispose();
+  }
+
+  /// Aplica el estado que viene de la base (propio o del rival). Para no
+  /// perder el historial de posiciones (necesario para la triple repetición
+  /// y la regla de 50 movimientos), no recarga el FEN entero -- reproduce
+  /// solo las jugadas nuevas con makeMove(), igual que el pasa-y-juega local.
+  void _applyRow(Map<String, dynamic> row) {
+    final uciMoves = (row['pgn_moves'] as String).split(' ').where((s) => s.isNotEmpty).toList();
+    for (var i = _engine.moveHistory.length; i < uciMoves.length; i++) {
+      final applied = _applyUci(uciMoves[i]);
+      if (!applied) {
+        // Desincronización rara: como red de seguridad, recargamos el FEN
+        // (a costa de perder el historial de repetición desde acá).
+        _engine.loadFen(row['current_fen'] as String);
+        break;
+      }
+    }
+
+    final active = row['turn_color'] == 'white' ? PieceColor.white : PieceColor.black;
+    final whiteMs = row['tiempo_restante_blancas_ms'] as int;
+    final blackMs = row['tiempo_restante_negras_ms'] as int;
+    if (_clock == null) {
+      _clock = FischerClock.resume(
+        whiteRemaining: Duration(milliseconds: whiteMs),
+        blackRemaining: Duration(milliseconds: blackMs),
+        increment: Duration(milliseconds: row['incremento_ms'] as int),
+        active: active,
+        turnStartedAt: DateTime.now(),
+        onTick: () => setState(() {}),
+        onTimeout: _onLocalTimeout,
+      );
+    } else {
+      _clock!.syncFromRemote(
+        whiteRemaining: Duration(milliseconds: whiteMs),
+        blackRemaining: Duration(milliseconds: blackMs),
+        active: active,
+      );
+    }
+
+    final terminada = row['estado'] == 'terminada';
+    setState(() {
+      _terminada = terminada;
+      _endMessage = terminada ? _endMessageFor(row['motivo_fin'] as String?, row['ganador'] as String?) : null;
+      if (_gameOver) {
+        _clock!.stop();
+      } else if (!_clock!.isRunning) {
+        _clock!.start();
+      }
+    });
+  }
+
+  bool _applyUci(String uci) {
+    final from = Position.fromAlgebraic(uci.substring(0, 2));
+    final to = Position.fromAlgebraic(uci.substring(2, 4));
+    if (from == null || to == null) return false;
+    PieceType? promo;
+    if (uci.length > 4) {
+      promo = switch (uci[4]) {
+        'q' => PieceType.queen,
+        'r' => PieceType.rook,
+        'b' => PieceType.bishop,
+        'n' => PieceType.knight,
+        _ => null,
+      };
+    }
+    final legal = _engine.allLegalMoves().where((m) => m.from == from && m.to == to && m.promotion == promo);
+    if (legal.isEmpty) return false;
+    final move = legal.first;
+    final ok = _engine.makeMove(move);
+    if (ok) _lastMove = move;
+    return ok;
+  }
+
+  String _endMessageFor(String? motivo, String? ganador) {
+    final myId = supabase.auth.currentUser!.id;
+    final soyGanador = ganador == myId;
+    final huboGanador = ganador != null;
+    final resultado = !huboGanador ? 'Tablas' : (soyGanador ? 'Ganaste' : 'Perdiste');
+    final motivoLabel = switch (motivo) {
+      'jaque_mate' => 'jaque mate',
+      'ahogado' => 'ahogado',
+      'timeout' => 'se acabó el tiempo',
+      'resignation' => 'rendición',
+      'tablas_acordadas' => 'tablas acordadas',
+      'tablas_repeticion' => 'triple repetición',
+      'tablas_50_movimientos' => 'regla de 50 movimientos',
+      'material_insuficiente' => 'material insuficiente',
+      _ => motivo ?? '',
+    };
+    return '$resultado — $motivoLabel';
+  }
+
+  bool get _gameOver => _terminada || _engine.status != GameStatus.ongoing;
+
+  Future<void> _onLocalTimeout(PieceColor loser) async {
+    if (_terminada) return;
+    final ganador = loser == _myColor ? _opponentId : supabase.auth.currentUser!.id;
+    try {
+      await cerrarPartida(partidaId: _partidaId, motivo: 'timeout', ganador: ganador);
+    } catch (_) {
+      // El rival ya la cerró (por ejemplo, detectó el mismo timeout primero) -- ok, ignoramos.
+    }
+  }
+
+  Future<void> _selectSquare(Position pos) async {
+    if (_gameOver || _engine.turn != _myColor || _sending) return;
+
+    if (_selected != null) {
+      final targets = _legalForSelected.where((m) => m.to == pos).toList();
+      if (targets.isNotEmpty) {
+        if (targets.first.promotion != null) {
+          await _askPromotion(pos);
+          return;
+        }
+        await _commit(targets.first);
+        return;
+      }
+      if (_selected == pos) {
+        setState(() {
+          _selected = null;
+          _legalForSelected = [];
+        });
+        return;
+      }
+    }
+
+    final piece = _engine.pieceAt(pos);
+    if (piece != null && piece.color == _engine.turn) {
+      setState(() {
+        _selected = pos;
+        _legalForSelected = _engine.legalMovesFrom(pos);
+      });
+    } else {
+      setState(() {
+        _selected = null;
+        _legalForSelected = [];
+      });
+    }
+  }
+
+  Future<void> _askPromotion(Position to) async {
+    final choice = await showDialog<PieceType>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Coronar a...'),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [PieceType.queen, PieceType.rook, PieceType.bishop, PieceType.knight]
+              .map((t) => IconButton(
+                    iconSize: 36,
+                    icon: PieceIcon(type: t, fill: _pieceFill(_myColor), outline: _pieceOutline(_myColor), size: 32),
+                    onPressed: () => Navigator.of(ctx).pop(t),
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+    if (choice == null) return;
+    final move = _legalForSelected.firstWhere((m) => m.to == to && m.promotion == choice);
+    await _commit(move);
+  }
+
+  Future<void> _commit(Move move) async {
+    setState(() => _sending = true);
+    _engine.makeMove(move);
+    _clock!.onMoveCommitted();
+    setState(() {
+      _selected = null;
+      _legalForSelected = [];
+      _lastMove = move;
+    });
+    final pgn = _engine.moveHistory.map((m) => m.toUci()).join(' ');
+    final turnColor = _engine.turn == PieceColor.white ? 'white' : 'black';
+    try {
+      await actualizarPartida(
+        partidaId: _partidaId,
+        currentFen: _engine.toFen(),
+        pgnMoves: pgn,
+        turnColor: turnColor,
+        tiempoBlancasMs: _clock!.whiteRemaining.inMilliseconds,
+        tiempoNegrasMs: _clock!.blackRemaining.inMilliseconds,
+      );
+      if (_engine.status != GameStatus.ongoing) {
+        _clock!.stop();
+        final motivo = switch (_engine.status) {
+          GameStatus.checkmate => 'jaque_mate',
+          GameStatus.stalemate => 'ahogado',
+          GameStatus.drawFiftyMoves => 'tablas_50_movimientos',
+          GameStatus.drawThreefoldRepetition => 'tablas_repeticion',
+          GameStatus.drawInsufficientMaterial => 'material_insuficiente',
+          GameStatus.ongoing => '',
+        };
+        String? ganador;
+        if (_engine.status == GameStatus.checkmate) {
+          // engine.turn ya pasó al que recibió el jaque mate -- perdió.
+          ganador = _engine.turn == _myColor ? _opponentId : supabase.auth.currentUser!.id;
+        }
+        try {
+          await cerrarPartida(partidaId: _partidaId, motivo: motivo, ganador: ganador);
+        } catch (_) {
+          // Ya la cerró el rival por otro camino -- ok.
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _confirmResign() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Rendirse?'),
+        content: const Text('Vas a perder la partida de inmediato. Esto no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Rendirse')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await cerrarPartida(partidaId: _partidaId, motivo: 'resignation', ganador: _opponentId);
+    } catch (_) {
+      // Ya estaba terminada de otra forma (timeout casi simultáneo, etc).
+    }
+  }
+
+  String? _statusMessage() {
+    if (_endMessage != null) return _endMessage;
+    if (_engine.status == GameStatus.checkmate) return 'Jaque mate';
+    if (_engine.inCheck(_engine.turn)) return 'Jaque';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = boardThemes[BoardVisual.clasico]!;
+    final gameOver = _gameOver;
+    final status = _statusMessage();
+    final myTurn = !gameOver && _engine.turn == _myColor;
+    final title = gameOver ? 'Partida terminada' : (myTurn ? 'Tu turno' : 'Turno del rival');
+
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Column(
+        children: [
+          if (_clock != null) _ClockRow(clock: _clock!, running: !gameOver),
+          _CapturedRow(material: _computeMaterial(_engine)),
+          if (status != null)
+            Container(
+              width: double.infinity,
+              color: gameOver ? Colors.red.shade50 : Colors.blue.shade50,
+              padding: const EdgeInsets.all(8),
+              child: Text(status, textAlign: TextAlign.center),
+            ),
+          Expanded(
+            child: Center(
+              child: _BoardArea(
+                theme: theme,
+                boardBuilder: () => AspectRatio(
+                  aspectRatio: 1,
+                  child: GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 8),
+                    itemCount: 64,
+                    itemBuilder: (context, index) {
+                      // Las negras juegan desde su propia perspectiva: tablero girado 180°.
+                      final flip = _myColor == PieceColor.black;
+                      final r = flip ? 7 - index ~/ 8 : index ~/ 8;
+                      final c = flip ? 7 - index % 8 : index % 8;
+                      final pos = Position(r, c);
+                      final piece = _engine.pieceAt(pos);
+                      final isSelected = _selected == pos;
+                      final isLastMove = _lastMove != null && (_lastMove!.from == pos || _lastMove!.to == pos);
+                      final targetMove = _legalForSelected.where((m) => m.to == pos).toList();
+                      final isTarget = targetMove.isNotEmpty;
+                      final isCapture = isTarget && (piece != null || targetMove.first.isEnPassant);
+
+                      return GestureDetector(
+                        onTap: gameOver ? null : () => _selectSquare(pos),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(decoration: _squareDecorationFor(r, c, theme, isSelected, isLastMove)),
+                            if (isLastMove && theme.lastMoveHighlight != null)
+                              Container(color: theme.lastMoveHighlight),
+                            if (piece != null) _pieceGlyph(piece),
+                            if (isTarget)
+                              isCapture
+                                  ? Container(
+                                      margin: const EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.blueAccent, width: 3),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: const BoxDecoration(color: Colors.blueAccent, shape: BoxShape.circle),
+                                    ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (!gameOver)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _confirmResign,
+                  icon: const Icon(Icons.flag, color: Colors.red),
+                  label: const Text('Rendirse', style: TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ),
+          if (gameOver)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+                child: const Text('Volver al inicio'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  BoxDecoration _squareDecorationFor(int r, int c, BoardThemeConfig theme, bool isSelected, bool isLastMove) {
+    final isLight = (r + c).isEven;
+    final gradient = isLight ? theme.lightSquareGradient : theme.darkSquareGradient;
+    final color = isLight ? theme.lightSquare : theme.darkSquare;
+    return BoxDecoration(
+      color: gradient == null ? color : null,
+      gradient: gradient,
+      borderRadius: theme.squareCornerRadius > 0 ? BorderRadius.circular(theme.squareCornerRadius) : null,
+      border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
     );
   }
 }
