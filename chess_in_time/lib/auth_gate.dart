@@ -1,97 +1,229 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'gameros_profile_service.dart';
+import 'mode_selection_screen.dart';
 import 'online_match_service.dart';
 import 'supabase_config.dart';
 
 /// ---------------------------------------------------------------------------
-/// CHESS IN TIME — Fase 5: login compartido con Gameros
+/// CHESS IN TIME — Fase 5/7: login compartido con Gameros
 ///
-/// Login vía Google, con la misma cuenta que ya usa Gameros (comparten
-/// auth.users en el mismo proyecto Supabase) — Chess in Time no tiene
-/// usuarios propios.
+/// Login con la misma cuenta que ya usa Gameros (comparten auth.users en el
+/// mismo proyecto Supabase) — Chess in Time no tiene usuarios propios.
 ///
-/// A propósito NO tapa el juego local: la app sigue arrancando directo en
-/// el selector de modalidad de siempre (Fases 1-4, sin login), y esta
-/// pantalla se abre aparte desde un botón de cuenta. Recién cuando exista
-/// una partida online de verdad tiene sentido pedir login antes de jugar.
+/// Desde la Fase 7, el login es obligatorio y es la primera pantalla de la
+/// app (antes era opcional y el juego arrancaba directo en el selector
+/// local): Chess in Time se lanza también como app independiente (APK
+/// propia) dentro del ecosistema Gameros, así que necesita su propia puerta
+/// de entrada, igual que Gameros la tiene para su propia app.
 /// ---------------------------------------------------------------------------
 
-class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key});
+/// Pantalla raíz: sin sesión activa muestra el login, con sesión pasa
+/// directo a la pantalla de modos (offline/online).
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
   @override
-  State<AccountScreen> createState() => _AccountScreenState();
+  Widget build(BuildContext context) {
+    return StreamBuilder<AuthState>(
+      stream: supabase.auth.onAuthStateChange,
+      initialData: AuthState(AuthChangeEvent.initialSession, supabase.auth.currentSession),
+      builder: (context, snapshot) {
+        final session = snapshot.data?.session ?? supabase.auth.currentSession;
+        return session != null ? const ModeSelectionScreen() : const LoginScreen();
+      },
+    );
+  }
 }
 
-class _AccountScreenState extends State<AccountScreen> {
-  bool _loading = false;
-  String? _error;
+/// Login obligatorio: mismas opciones que Gameros (email/contraseña propios
+/// o Google), porque comparten el mismo auth.users -- quien ya tiene cuenta
+/// de Gameros entra directo acá con la misma.
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
 
-  Future<void> _signInWithGoogle() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleAuth({required bool isSignUp}) async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (email.isEmpty || password.isEmpty) {
+      _showMessage('Completá email y contraseña.');
+      return;
+    }
+    setState(() => _loading = true);
     try {
-      await supabase.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'io.supabase.chessintime://login-callback',
-      );
+      if (isSignUp) {
+        await supabase.auth.signUp(
+          email: email,
+          password: password,
+          emailRedirectTo: 'io.supabase.chessintime://login-callback',
+        );
+        if (supabase.auth.currentSession == null && mounted) {
+          _showMessage(
+            'Cuenta creada. Si tu proyecto pide confirmación por email, '
+            'revisá tu correo antes de iniciar sesión.',
+          );
+        }
+      } else {
+        await supabase.auth.signInWithPassword(email: email, password: password);
+      }
+    } on AuthException catch (e) {
+      _showMessage(e.message);
     } catch (e) {
-      setState(() => _error = 'No se pudo iniciar sesión. Probá de nuevo.');
+      _showMessage('Ocurrió un error inesperado: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _signOut() async {
-    await supabase.auth.signOut();
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _loading = true);
+    try {
+      await supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'io.supabase.chessintime://login-callback',
+      );
+    } on AuthException catch (e) {
+      _showMessage(e.message);
+    } catch (e) {
+      _showMessage('Ocurrió un error inesperado: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mi cuenta')),
-      body: StreamBuilder<AuthState>(
-        stream: supabase.auth.onAuthStateChange,
-        initialData: AuthState(AuthChangeEvent.initialSession, supabase.auth.currentSession),
-        builder: (context, snapshot) {
-          final session = snapshot.data?.session ?? supabase.auth.currentSession;
-          return ListView(
-            padding: const EdgeInsets.all(24),
-            children: session != null
-                ? [
-                    _GamerosIdentity(userId: session.user.id, email: session.user.email),
-                    const SizedBox(height: 24),
-                    Center(child: OutlinedButton(onPressed: _signOut, child: const Text('Cerrar sesión'))),
-                    const SizedBox(height: 32),
-                    const _MyRatings(),
-                  ]
-                : [
-                    const Text(
-                      'Iniciá sesión con la misma cuenta de Gameros para jugar online más adelante.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.castle, size: 64, color: Color(0xFF3ECF8E)),
+                const SizedBox(height: 16),
+                Text(
+                  'Chess in Time',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Ajedrez con reloj, del ecosistema Gameros.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Contraseña', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: _loading ? null : () => _handleAuth(isSignUp: true),
+                  child: const Text('Registrarme'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: _loading ? null : () => _handleAuth(isSignUp: false),
+                  child: const Text('Iniciar sesión'),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('o', style: Theme.of(context).textTheme.bodySmall),
                     ),
-                    const SizedBox(height: 24),
-                    Center(
-                      child: _loading
-                          ? const CircularProgressIndicator()
-                          : ElevatedButton.icon(
-                              onPressed: _signInWithGoogle,
-                              icon: const Icon(Icons.login),
-                              label: const Text('Iniciar sesión con Google'),
-                            ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(_error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
-                    ],
+                    const Expanded(child: Divider()),
                   ],
-          );
-        },
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _handleGoogleSignIn,
+                  icon: const Icon(Icons.g_mobiledata, size: 28),
+                  label: const Text('Continuar con Google'),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Con la misma cuenta de Gameros, si ya tenés una.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                if (_loading) ...[
+                  const SizedBox(height: 20),
+                  const Center(child: CircularProgressIndicator()),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
+    );
+  }
+}
+
+/// Pantalla "Mi cuenta", accesible desde la pantalla de modos una vez
+/// logueado -- a diferencia de LoginScreen, acá siempre hay sesión (el
+/// AuthGate no deja llegar hasta acá sin loguearse).
+class AccountScreen extends StatelessWidget {
+  const AccountScreen({super.key});
+
+  Future<void> _signOut(BuildContext context) async {
+    await supabase.auth.signOut();
+    if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = supabase.auth.currentSession;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Mi cuenta')),
+      body: session == null
+          ? const Center(child: Text('Sesión cerrada.'))
+          : ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                _GamerosIdentity(userId: session.user.id, email: session.user.email),
+                const SizedBox(height: 24),
+                Center(
+                  child: OutlinedButton(onPressed: () => _signOut(context), child: const Text('Cerrar sesión')),
+                ),
+                const SizedBox(height: 32),
+                const _MyRatings(),
+              ],
+            ),
     );
   }
 }

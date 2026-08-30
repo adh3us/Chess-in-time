@@ -142,15 +142,6 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
 
   bool get _gameOver => _forcedEnd != null || (_engine?.status ?? GameStatus.ongoing) != GameStatus.ongoing;
 
-  Future<void> _playOnline(ClockModality modality) async {
-    if (supabase.auth.currentUser == null) {
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()));
-      if (!mounted || supabase.auth.currentUser == null) return;
-    }
-    if (!mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => OnlineLobbyScreen(modality: modality)));
-  }
-
   void _selectSquare(Position pos) {
     final engine = _engine!;
     if (_gameOver) return;
@@ -289,16 +280,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
   Widget build(BuildContext context) {
     if (_modality == null || _engine == null || _clock == null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Elegí modalidad'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.account_circle),
-              tooltip: 'Mi cuenta',
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen())),
-            ),
-          ],
-        ),
+        appBar: AppBar(title: const Text('Multijugador · Elegí modalidad')),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -331,21 +313,6 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
                     title: Text(m.label),
                     subtitle: const Text('Local, pasa y juega'),
                     onTap: () => _startGame(m),
-                  ),
-                )),
-            const SizedBox(height: 24),
-            const Text('Jugar online', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text(
-              'Con la misma cuenta de Gameros. Buscamos un rival real en la modalidad que elijas.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 8),
-            ...ClockModality.all.map((m) => Card(
-                  child: ListTile(
-                    title: Text(m.label),
-                    trailing: const Icon(Icons.public),
-                    onTap: () => _playOnline(m),
                   ),
                 )),
           ],
@@ -1201,6 +1168,218 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
       gradient: gradient,
       borderRadius: theme.squareCornerRadius > 0 ? BorderRadius.circular(theme.squareCornerRadius) : null,
       border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------------
+/// CHESS IN TIME — Fase 7: Jugar solo (offline, sin rival ni reloj)
+///
+/// Tablero libre para practicar/analizar: mismo motor y reglas que el resto
+/// de la app, pero sin FischerClock -- nadie pierde por tiempo, es solo para
+/// mover piezas de los dos lados a gusto.
+/// ---------------------------------------------------------------------------
+class SoloBoardScreen extends StatefulWidget {
+  const SoloBoardScreen({super.key});
+
+  @override
+  State<SoloBoardScreen> createState() => _SoloBoardScreenState();
+}
+
+class _SoloBoardScreenState extends State<SoloBoardScreen> {
+  LocalChessEngine _engine = LocalChessEngine();
+  Position? _selected;
+  List<Move> _legalForSelected = [];
+  Move? _lastMove;
+
+  void _reiniciar() {
+    setState(() {
+      _engine = LocalChessEngine();
+      _selected = null;
+      _legalForSelected = [];
+      _lastMove = null;
+    });
+  }
+
+  void _selectSquare(Position pos) {
+    if (_engine.status != GameStatus.ongoing) return;
+    if (_selected != null) {
+      final targets = _legalForSelected.where((m) => m.to == pos).toList();
+      if (targets.isNotEmpty) {
+        if (targets.first.promotion != null) {
+          _askPromotion(pos);
+          return;
+        }
+        _commit(targets.first);
+        return;
+      }
+      if (_selected == pos) {
+        setState(() {
+          _selected = null;
+          _legalForSelected = [];
+        });
+        return;
+      }
+    }
+    final piece = _engine.pieceAt(pos);
+    if (piece != null && piece.color == _engine.turn) {
+      setState(() {
+        _selected = pos;
+        _legalForSelected = _engine.legalMovesFrom(pos);
+      });
+    } else {
+      setState(() {
+        _selected = null;
+        _legalForSelected = [];
+      });
+    }
+  }
+
+  void _commit(Move move) {
+    _engine.makeMove(move);
+    setState(() {
+      _selected = null;
+      _legalForSelected = [];
+      _lastMove = move;
+    });
+  }
+
+  Future<void> _askPromotion(Position to) async {
+    final engine = _engine;
+    final choice = await showDialog<PieceType>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Coronar a...'),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [PieceType.queen, PieceType.rook, PieceType.bishop, PieceType.knight]
+              .map((t) => IconButton(
+                    iconSize: 36,
+                    icon: PieceIcon(type: t, fill: _pieceFill(engine.turn), outline: _pieceOutline(engine.turn), size: 32),
+                    onPressed: () => Navigator.of(ctx).pop(t),
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+    if (choice == null) return;
+    final move = _legalForSelected.firstWhere((m) => m.to == to && m.promotion == choice);
+    _commit(move);
+  }
+
+  String? _statusMessage() {
+    switch (_engine.status) {
+      case GameStatus.checkmate:
+        final winner = _engine.turn == PieceColor.white ? 'Negras' : 'Blancas';
+        return 'Jaque mate — ganan $winner';
+      case GameStatus.stalemate:
+        return 'Ahogado — tablas';
+      case GameStatus.drawFiftyMoves:
+        return 'Tablas por regla de 50 movimientos';
+      case GameStatus.drawThreefoldRepetition:
+        return 'Tablas por triple repetición';
+      case GameStatus.drawInsufficientMaterial:
+        return 'Tablas por material insuficiente';
+      case GameStatus.ongoing:
+        if (_engine.inCheck(_engine.turn)) {
+          final side = _engine.turn == PieceColor.white ? 'Blancas' : 'Negras';
+          return 'Jaque a $side';
+        }
+        return null;
+    }
+  }
+
+  BoxDecoration _squareDecoration(int r, int c, bool isSelected, bool isLastMove, BoardThemeConfig theme) {
+    final isLight = (r + c).isEven;
+    final gradient = isLight ? theme.lightSquareGradient : theme.darkSquareGradient;
+    final color = isLight ? theme.lightSquare : theme.darkSquare;
+    return BoxDecoration(
+      color: gradient == null ? color : null,
+      gradient: gradient,
+      borderRadius: theme.squareCornerRadius > 0 ? BorderRadius.circular(theme.squareCornerRadius) : null,
+      border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final engine = _engine;
+    final gameOver = engine.status != GameStatus.ongoing;
+    final status = _statusMessage();
+    final turnLabel = engine.turn == PieceColor.white ? 'Blancas' : 'Negras';
+    final theme = boardThemes[BoardVisual.clasico]!;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Jugar solo · Turno: $turnLabel'),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Reiniciar tablero', onPressed: _reiniciar),
+        ],
+      ),
+      body: Column(
+        children: [
+          _CapturedRow(material: _computeMaterial(engine)),
+          if (status != null)
+            Container(
+              width: double.infinity,
+              color: gameOver ? Colors.red.shade50 : Colors.blue.shade50,
+              padding: const EdgeInsets.all(8),
+              child: Text(status, textAlign: TextAlign.center),
+            ),
+          Expanded(
+            child: Center(
+              child: _BoardArea(
+                theme: theme,
+                boardBuilder: () => AspectRatio(
+                  aspectRatio: 1,
+                  child: GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 8),
+                    itemCount: 64,
+                    itemBuilder: (context, index) {
+                      final r = index ~/ 8;
+                      final c = index % 8;
+                      final pos = Position(r, c);
+                      final piece = engine.pieceAt(pos);
+                      final isSelected = _selected == pos;
+                      final isLastMove = _lastMove != null && (_lastMove!.from == pos || _lastMove!.to == pos);
+                      final targetMove = _legalForSelected.where((m) => m.to == pos).toList();
+                      final isTarget = targetMove.isNotEmpty;
+                      final isCapture = isTarget && (piece != null || targetMove.first.isEnPassant);
+                      return GestureDetector(
+                        onTap: gameOver ? null : () => _selectSquare(pos),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(decoration: _squareDecoration(r, c, isSelected, isLastMove, theme)),
+                            if (isLastMove && theme.lastMoveHighlight != null) Container(color: theme.lastMoveHighlight),
+                            if (piece != null) _pieceGlyph(piece),
+                            if (isTarget)
+                              isCapture
+                                  ? Container(
+                                      margin: const EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.blueAccent, width: 3),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: const BoxDecoration(color: Colors.blueAccent, shape: BoxShape.circle),
+                                    ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
