@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'auth_gate.dart';
 import 'chess_game_screen.dart';
+import 'private_match_screen.dart';
 import 'supabase_config.dart';
 
 /// En release, un error sin capturar durante el armado de una pantalla se ve
@@ -42,11 +43,22 @@ void _handleTorneoDeepLink(Uri uri) {
   ));
 }
 
+/// Fase 7: link de invitación a una sala privada
+/// (io.supabase.chessintime://sala?codigo=XXXXXX), compartido por otro
+/// jugador desde "Partida privada" -- intenta unirse directo con ese código.
+void _handleSalaDeepLink(Uri uri) {
+  final codigo = uri.queryParameters['codigo'];
+  if (codigo == null || codigo.isEmpty) return;
+  rootNavigatorKey.currentState?.push(MaterialPageRoute(
+    builder: (_) => UnirseSalaScreen(codigoInicial: codigo),
+  ));
+}
+
 void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
-      await initSupabase(onTorneoDeepLink: _handleTorneoDeepLink);
+      await initSupabase(onTorneoDeepLink: _handleTorneoDeepLink, onSalaDeepLink: _handleSalaDeepLink);
       final previousOnError = FlutterError.onError;
       FlutterError.onError = (details) {
         previousOnError?.call(details);

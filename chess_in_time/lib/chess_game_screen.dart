@@ -756,12 +756,14 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   String? _endMessage;
   bool _sending = false;
   String? _opponentName;
+  late final bool _sinReloj;
 
   @override
   void initState() {
     super.initState();
     final row = widget.partida;
     _partidaId = row['id'] as String;
+    _sinReloj = row['sin_reloj'] == true;
     final myId = supabase.auth.currentUser!.id;
     _myColor = row['jugador_blancas'] == myId ? PieceColor.white : PieceColor.black;
     _opponentId = _myColor == PieceColor.white ? row['jugador_negras'] as String : row['jugador_blancas'] as String;
@@ -814,31 +816,36 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
       }
     }
 
-    final active = row['turn_color'] == 'white' ? PieceColor.white : PieceColor.black;
-    final whiteMs = row['tiempo_restante_blancas_ms'] as int;
-    final blackMs = row['tiempo_restante_negras_ms'] as int;
-    if (_clock == null) {
-      _clock = FischerClock.resume(
-        whiteRemaining: Duration(milliseconds: whiteMs),
-        blackRemaining: Duration(milliseconds: blackMs),
-        increment: Duration(milliseconds: row['incremento_ms'] as int),
-        active: active,
-        turnStartedAt: DateTime.now(),
-        onTick: () => setState(() {}),
-        onTimeout: _onLocalTimeout,
-      );
-    } else if (_clock!.active != active ||
-        _clock!.whiteRemaining.inMilliseconds != whiteMs ||
-        _clock!.blackRemaining.inMilliseconds != blackMs) {
-      // Solo resincroniza si de verdad cambió algo (una jugada nueva) --
-      // si no, un poll sin novedades reiniciaría el cronómetro cada vez y
-      // el reloj nunca bajaría de verdad, porque syncFromRemote() vuelve a
-      // marcar "el turno empieza ahora".
-      _clock!.syncFromRemote(
-        whiteRemaining: Duration(milliseconds: whiteMs),
-        blackRemaining: Duration(milliseconds: blackMs),
-        active: active,
-      );
+    // Partida "sin reloj" (Fase 7, partidas privadas): no hay FischerClock
+    // en absoluto -- nadie pierde por tiempo, solo importa de quién es el
+    // turno, que ya queda reflejado en engine.turn al reproducir las jugadas.
+    if (!_sinReloj) {
+      final active = row['turn_color'] == 'white' ? PieceColor.white : PieceColor.black;
+      final whiteMs = row['tiempo_restante_blancas_ms'] as int;
+      final blackMs = row['tiempo_restante_negras_ms'] as int;
+      if (_clock == null) {
+        _clock = FischerClock.resume(
+          whiteRemaining: Duration(milliseconds: whiteMs),
+          blackRemaining: Duration(milliseconds: blackMs),
+          increment: Duration(milliseconds: row['incremento_ms'] as int),
+          active: active,
+          turnStartedAt: DateTime.now(),
+          onTick: () => setState(() {}),
+          onTimeout: _onLocalTimeout,
+        );
+      } else if (_clock!.active != active ||
+          _clock!.whiteRemaining.inMilliseconds != whiteMs ||
+          _clock!.blackRemaining.inMilliseconds != blackMs) {
+        // Solo resincroniza si de verdad cambió algo (una jugada nueva) --
+        // si no, un poll sin novedades reiniciaría el cronómetro cada vez y
+        // el reloj nunca bajaría de verdad, porque syncFromRemote() vuelve a
+        // marcar "el turno empieza ahora".
+        _clock!.syncFromRemote(
+          whiteRemaining: Duration(milliseconds: whiteMs),
+          blackRemaining: Duration(milliseconds: blackMs),
+          active: active,
+        );
+      }
     }
 
     final terminada = row['estado'] == 'terminada';
@@ -846,8 +853,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
       _terminada = terminada;
       _endMessage = terminada ? _endMessageFor(row['motivo_fin'] as String?, row['ganador'] as String?) : null;
       if (_gameOver) {
-        _clock!.stop();
-      } else if (!_clock!.isRunning) {
+        _clock?.stop();
+      } else if (_clock != null && !_clock!.isRunning) {
         _clock!.start();
       }
     });
@@ -981,7 +988,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   Future<void> _commit(Move move) async {
     setState(() => _sending = true);
     _engine.makeMove(move);
-    _clock!.onMoveCommitted();
+    _clock?.onMoveCommitted();
     setState(() {
       _selected = null;
       _legalForSelected = [];
@@ -995,11 +1002,11 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
         currentFen: _engine.toFen(),
         pgnMoves: pgn,
         turnColor: turnColor,
-        tiempoBlancasMs: _clock!.whiteRemaining.inMilliseconds,
-        tiempoNegrasMs: _clock!.blackRemaining.inMilliseconds,
+        tiempoBlancasMs: _clock?.whiteRemaining.inMilliseconds ?? 0,
+        tiempoNegrasMs: _clock?.blackRemaining.inMilliseconds ?? 0,
       );
       if (_engine.status != GameStatus.ongoing) {
-        _clock!.stop();
+        _clock?.stop();
         final motivo = switch (_engine.status) {
           GameStatus.checkmate => 'jaque_mate',
           GameStatus.stalemate => 'ahogado',
@@ -1424,7 +1431,11 @@ class _TorneoMatchScreenState extends State<TorneoMatchScreen> {
 
   Future<void> _entrar() async {
     if (supabase.auth.currentUser == null) {
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()));
+      // El login ahora es obligatorio (Fase 7) y ya se muestra solo en la
+      // raíz de la app (AuthGate) -- pero un deep link puede llegar antes de
+      // que el usuario haya llegado a loguearse, así que igual hace falta
+      // pedirlo acá.
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
       if (!mounted) return;
       if (supabase.auth.currentUser == null) {
         Navigator.of(context).pop();

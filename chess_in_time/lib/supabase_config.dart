@@ -36,18 +36,24 @@ final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 /// esté el usuario en ese momento -- mismo motivo que rootScaffoldMessengerKey.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
-Future<void> initSupabase({void Function(Uri uri)? onTorneoDeepLink}) async {
+Future<void> initSupabase({
+  void Function(Uri uri)? onTorneoDeepLink,
+  void Function(Uri uri)? onSalaDeepLink,
+}) async {
   await Supabase.initialize(
     url: supabaseUrl,
     publishableKey: supabaseAnonKey,
     authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
   );
-  _listenForAuthDeepLinks(onTorneoDeepLink: onTorneoDeepLink);
+  _listenForAuthDeepLinks(onTorneoDeepLink: onTorneoDeepLink, onSalaDeepLink: onSalaDeepLink);
 }
 
 SupabaseClient get supabase => Supabase.instance.client;
 
-void _listenForAuthDeepLinks({void Function(Uri uri)? onTorneoDeepLink}) {
+void _listenForAuthDeepLinks({
+  void Function(Uri uri)? onTorneoDeepLink,
+  void Function(Uri uri)? onSalaDeepLink,
+}) {
   final appLinks = AppLinks();
 
   Future<void> handle(Uri? uri) async {
@@ -57,6 +63,13 @@ void _listenForAuthDeepLinks({void Function(Uri uri)? onTorneoDeepLink}) {
     // distingue por el host, y no tiene nada que ver con el login.
     if (uri.host == 'torneo') {
       onTorneoDeepLink?.call(uri);
+      return;
+    }
+    // Fase 7: link de invitación a una sala privada
+    // (io.supabase.chessintime://sala?codigo=XXXXXX), compartido por otro
+    // jugador desde "Partida privada".
+    if (uri.host == 'sala') {
+      onSalaDeepLink?.call(uri);
       return;
     }
     // Justo al volver del navegador puede haber un corte de red de un

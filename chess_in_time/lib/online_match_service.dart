@@ -172,3 +172,52 @@ Future<Map<String, dynamic>?> obtenerPartida(String partidaId) async {
   if (result == null) return null;
   return Map<String, dynamic>.from(result);
 }
+
+/// ---------------------------------------------------------------------------
+/// Fase 7: partidas privadas (invitar a un amigo)
+///
+/// Un tercer camino además del matchmaking libre y las partidas de torneo:
+/// acá los dos jugadores se conocen y quedan en jugar, así que en vez de
+/// emparejar al azar arman juntos una sala con un código para compartir.
+/// ---------------------------------------------------------------------------
+
+/// Crea una sala privada. `modalidad` puede ser null -- significa "sin
+/// reloj" (ver sin_reloj en chess_in_time.partidas).
+Future<Map<String, dynamic>> crearSalaPrivada(String? modalidad) async {
+  final result = await supabase
+      .schema('chess_in_time')
+      .rpc('crear_sala_privada', params: {'p_modalidad': modalidad});
+  return Map<String, dynamic>.from(result as Map);
+}
+
+/// Se une a una sala por código (no hace falta que la sala ya te conozca
+/// como participante -- por eso es una función aparte y no un simple select,
+/// ver la nota de RLS en 007_salas_privadas.sql).
+Future<Map<String, dynamic>> unirseSalaPrivada(String codigo) async {
+  final result = await supabase
+      .schema('chess_in_time')
+      .rpc('unirse_sala_privada', params: {'p_codigo': codigo});
+  return Map<String, dynamic>.from(result as Map);
+}
+
+/// Estado actual de la sala, para el polling y el botón "Actualizar" de
+/// SalaLobbyScreen.
+Future<Map<String, dynamic>?> obtenerSalaPrivada(String salaId) async {
+  final result = await supabase
+      .schema('chess_in_time')
+      .from('salas_privadas')
+      .select()
+      .eq('id', salaId)
+      .maybeSingle();
+  if (result == null) return null;
+  return Map<String, dynamic>.from(result);
+}
+
+/// Arma la partida de la sala (una vez que los dos están adentro). Si el
+/// rival ya la arrancó primero, devuelve la misma en vez de crear otra.
+Future<Map<String, dynamic>> iniciarPartidaPrivada(String salaId) async {
+  final result = await supabase
+      .schema('chess_in_time')
+      .rpc('iniciar_partida_privada', params: {'p_sala_id': salaId});
+  return Map<String, dynamic>.from(result as Map);
+}

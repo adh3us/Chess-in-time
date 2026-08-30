@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'auth_gate.dart';
 import 'chess_game_screen.dart';
 import 'fischer_clock.dart';
+import 'private_match_screen.dart';
 
 /// ---------------------------------------------------------------------------
 /// CHESS IN TIME — Fase 7: pantalla de modos (offline/online)
@@ -86,7 +87,7 @@ class ModeSelectionScreen extends StatelessWidget {
               title: const Text('Partida privada'),
               subtitle: const Text('Invitá a un amigo y acuerden el reloj antes de arrancar.'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => _proximamente(context, 'Partida privada'),
+              onTap: () => _abrir(context, const PrivateMatchScreen()),
             ),
           ),
           Card(
