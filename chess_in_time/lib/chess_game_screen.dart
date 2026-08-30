@@ -641,15 +641,29 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   Timer? _pollTimer;
   String? _error;
   bool _navigated = false;
+  String _status = 'Preparando...';
 
   @override
   void initState() {
     super.initState();
-    _buscar();
+    // Se pospone al primer frame ya dibujado a propósito: así, si algo
+    // revienta más adelante, sabemos que por lo menos esta pantalla (con
+    // "Preparando...") llegó a pintarse -- útil para descartar que el
+    // problema sea de la navegación en sí, y no de lo que viene después.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _buscar());
   }
 
   Future<void> _buscar() async {
-    final key = modalidadKey(widget.modality);
+    if (!mounted) return;
+    setState(() => _status = 'Calculando modalidad...');
+    final String key;
+    try {
+      key = modalidadKey(widget.modality);
+    } catch (e, st) {
+      if (mounted) setState(() => _error = 'Error calculando modalidad: $e\n$st');
+      return;
+    }
+    if (mounted) setState(() => _status = 'Consultando rival...');
     try {
       final partida = await buscarPartida(key);
       if (!mounted) return;
@@ -657,13 +671,14 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         _goToGame(partida);
         return;
       }
+      setState(() => _status = 'Buscando rival...');
       // Nadie esperando todavía en esta modalidad: reintentamos cada 2
       // segundos hasta que otro jugador llame a buscar_partida y nos
       // empareje (buscar_partida borra cualquier fila vieja propia de la
       // cola antes de reintentar, así que no se acumulan filas fantasma).
       _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _reintentar(key));
-    } catch (e) {
-      if (mounted) setState(() => _error = 'No se pudo buscar partida: $e');
+    } catch (e, st) {
+      if (mounted) setState(() => _error = 'No se pudo buscar partida: $e\n$st');
     }
   }
 
@@ -700,33 +715,46 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Jugar online · ${widget.modality.label}')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _error != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_error!, textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Volver')),
-                  ],
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 24),
-                    const Text('Buscando rival...'),
-                    const SizedBox(height: 24),
-                    OutlinedButton(onPressed: _cancelar, child: const Text('Cancelar')),
-                  ],
-                ),
+    try {
+      return Scaffold(
+        appBar: AppBar(title: Text('Jugar online · ${widget.modality.label}')),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: _error != null
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SelectableText(_error!, textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Volver')),
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 24),
+                      Text(_status),
+                      const SizedBox(height: 24),
+                      OutlinedButton(onPressed: _cancelar, child: const Text('Cancelar')),
+                    ],
+                  ),
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e, st) {
+      // Red de seguridad final: si incluso armar esta pantalla revienta,
+      // que se vea el motivo en vez de quedar todo gris sin ninguna pista.
+      return Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: SelectableText('Error armando la pantalla: $e\n$st'),
+          ),
+        ),
+      );
+    }
   }
 }
 
