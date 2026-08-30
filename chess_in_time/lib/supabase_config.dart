@@ -47,12 +47,34 @@ void _listenForAuthDeepLinks() {
 
   Future<void> handle(Uri? uri) async {
     if (uri == null || uri.scheme != 'io.supabase.chessintime') return;
-    try {
-      await supabase.auth.getSessionFromUrl(uri);
-    } catch (e) {
-      rootScaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('No se pudo completar el login: $e'), duration: const Duration(seconds: 8)),
-      );
+    // Justo al volver del navegador puede haber un corte de red de un
+    // instante (reconexión de WiFi, etc.). AuthRetryableFetchException es
+    // la forma en que Supabase marca ese tipo de error de red como algo
+    // que vale la pena reintentar, a diferencia de un error real de auth.
+    const maxAttempts = 3;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await supabase.auth.getSessionFromUrl(uri);
+        return;
+      } on AuthRetryableFetchException {
+        if (attempt == maxAttempts) {
+          rootScaffoldMessengerKey.currentState?.showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se pudo conectar para completar el login. Revisá tu conexión a internet y probá de nuevo.',
+              ),
+              duration: Duration(seconds: 8),
+            ),
+          );
+          return;
+        }
+        await Future.delayed(Duration(seconds: attempt));
+      } catch (e) {
+        rootScaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('No se pudo completar el login: $e'), duration: const Duration(seconds: 8)),
+        );
+        return;
+      }
     }
   }
 
