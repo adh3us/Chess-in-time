@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- El proyecto Flutter solo agrega este permiso por default en las
+         variantes debug/profile (para hot reload); la app necesita internet
+         de verdad en release para hablar con Supabase (login, futuras
+         partidas online), así que hay que declararlo acá también. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="chess_in_time"
         android:name="${applicationName}"
