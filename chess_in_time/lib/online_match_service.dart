@@ -1,4 +1,3 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fischer_clock.dart';
 import 'supabase_config.dart';
 
@@ -89,24 +88,17 @@ Future<List<Map<String, dynamic>>> misRatings() async {
   return List<Map<String, dynamic>>.from(result as List);
 }
 
-/// Suscripción a los cambios de una partida puntual (INSERT para cuando te
-/// emparejan mientras esperás, UPDATE para las jugadas del rival).
-RealtimeChannel suscribirsePartida({
-  required String channelName,
-  required PostgresChangeEvent event,
-  String? partidaId,
-  required void Function(Map<String, dynamic> row) onChange,
-}) {
-  final channel = supabase.channel(channelName);
-  channel.onPostgresChanges(
-    event: event,
-    schema: 'chess_in_time',
-    table: 'partidas',
-    filter: partidaId == null
-        ? null
-        : PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: partidaId),
-    callback: (payload) => onChange(payload.newRecord),
-  );
-  channel.subscribe();
-  return channel;
+/// Trae el estado actual de una partida puntual. Se usa para refrescar por
+/// polling (cada 2 segundos, ver OnlineLobbyScreen/OnlineGameScreen) en vez
+/// de Realtime -- más simple y usa el mismo camino REST que ya funciona para
+/// todo lo demás (ratings, buscar_partida), sin depender de un WebSocket.
+Future<Map<String, dynamic>?> obtenerPartida(String partidaId) async {
+  final result = await supabase
+      .schema('chess_in_time')
+      .from('partidas')
+      .select()
+      .eq('id', partidaId)
+      .maybeSingle();
+  if (result == null) return null;
+  return Map<String, dynamic>.from(result);
 }

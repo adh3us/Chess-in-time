@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'local_chess_engine.dart';
 import 'fischer_clock.dart';
 import 'board_theme.dart';
@@ -638,7 +638,7 @@ class OnlineLobbyScreen extends StatefulWidget {
 }
 
 class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
-  RealtimeChannel? _channel;
+  Timer? _pollTimer;
   String? _error;
   bool _navigated = false;
 
@@ -657,16 +657,21 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         _goToGame(partida);
         return;
       }
-      final myId = supabase.auth.currentUser!.id;
-      _channel = suscribirsePartida(
-        channelName: 'espera_$myId',
-        event: PostgresChangeEvent.insert,
-        onChange: (row) {
-          if (row['jugador_blancas'] == myId || row['jugador_negras'] == myId) {
-            _goToGame(row);
-          }
-        },
-      );
+      // Nadie esperando todavía en esta modalidad: reintentamos cada 2
+      // segundos hasta que otro jugador llame a buscar_partida y nos
+      // empareje (buscar_partida borra cualquier fila vieja propia de la
+      // cola antes de reintentar, así que no se acumulan filas fantasma).
+      _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _reintentar(key));
+    } catch (e) {
+      if (mounted) setState(() => _error = 'No se pudo buscar partida: $e');
+    }
+  }
+
+  Future<void> _reintentar(String key) async {
+    if (_navigated || !mounted) return;
+    try {
+      final partida = await buscarPartida(key);
+      if (partida != null) _goToGame(partida);
     } catch (e) {
       if (mounted) setState(() => _error = 'No se pudo buscar partida: $e');
     }
@@ -675,7 +680,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   void _goToGame(Map<String, dynamic> partida) {
     if (_navigated) return;
     _navigated = true;
-    _channel?.unsubscribe();
+    _pollTimer?.cancel();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => OnlineGameScreen(partida: partida)),
@@ -689,7 +694,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -747,7 +752,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   late final String _opponentId;
   late final LocalChessEngine _engine;
   FischerClock? _clock;
-  RealtimeChannel? _channel;
+  Timer? _pollTimer;
   Position? _selected;
   List<Move> _legalForSelected = [];
   Move? _lastMove;
@@ -765,17 +770,25 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     _opponentId = _myColor == PieceColor.white ? row['jugador_negras'] as String : row['jugador_blancas'] as String;
     _engine = LocalChessEngine();
     _applyRow(row);
-    _channel = suscribirsePartida(
-      channelName: 'partida_$_partidaId',
-      event: PostgresChangeEvent.update,
-      partidaId: _partidaId,
-      onChange: _applyRow,
-    );
+    // Se refresca por polling en vez de Realtime -- más simple y usa el
+    // mismo camino REST que ya funciona para todo lo demás.
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pollPartida());
+  }
+
+  Future<void> _pollPartida() async {
+    if (!mounted) return;
+    try {
+      final row = await obtenerPartida(_partidaId);
+      if (row != null && mounted) _applyRow(row);
+    } catch (_) {
+      // Un fallo puntual de red no debería tirar abajo la partida -- se
+      // reintenta solo en el próximo tick.
+    }
   }
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
+    _pollTimer?.cancel();
     _clock?.dispose();
     super.dispose();
   }
@@ -809,7 +822,13 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
         onTick: () => setState(() {}),
         onTimeout: _onLocalTimeout,
       );
-    } else {
+    } else if (_clock!.active != active ||
+        _clock!.whiteRemaining.inMilliseconds != whiteMs ||
+        _clock!.blackRemaining.inMilliseconds != blackMs) {
+      // Solo resincroniza si de verdad cambió algo (una jugada nueva) --
+      // si no, un poll sin novedades reiniciaría el cronómetro cada vez y
+      // el reloj nunca bajaría de verdad, porque syncFromRemote() vuelve a
+      // marcar "el turno empieza ahora".
       _clock!.syncFromRemote(
         whiteRemaining: Duration(milliseconds: whiteMs),
         blackRemaining: Duration(milliseconds: blackMs),
