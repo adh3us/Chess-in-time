@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'auth_gate.dart';
 import 'chess_game_screen.dart';
+import 'equipos_screen.dart';
 import 'fischer_clock.dart';
 import 'private_match_screen.dart';
 
@@ -17,12 +18,6 @@ class ModeSelectionScreen extends StatelessWidget {
 
   void _abrir(BuildContext context, Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-  }
-
-  void _proximamente(BuildContext context, String modo) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$modo llega en la próxima actualización.')),
-    );
   }
 
   @override
@@ -96,7 +91,7 @@ class ModeSelectionScreen extends StatelessWidget {
               title: const Text('Equipos'),
               subtitle: const Text('Varios jugadores por lado, se suman los resultados.'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => _proximamente(context, 'Equipos'),
+              onTap: () => _abrir(context, const EquiposScreen()),
             ),
           ),
         ],

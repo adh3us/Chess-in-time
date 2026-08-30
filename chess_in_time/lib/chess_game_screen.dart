@@ -909,6 +909,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     try {
       await cerrarPartida(partidaId: _partidaId, motivo: 'timeout', ganador: ganador);
       await _reportarTorneo(ganador);
+      await _reportarEquipo();
     } catch (_) {
       // El rival ya la cerró (por ejemplo, detectó el mismo timeout primero) -- ok, ignoramos.
     }
@@ -923,6 +924,17 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   Future<void> _reportarTorneo(String? ganador) async {
     try {
       await reportarResultadoTorneo(widget.partida, ganador);
+    } catch (_) {}
+  }
+
+  /// Fase 7: si este tablero es parte de un partido de Equipos, suma su
+  /// resultado al puntaje agregado -- si no, reportarResultadoEquipo() no
+  /// hace nada. A diferencia de _reportarTorneo(), es seguro llamarla desde
+  /// los dos jugadores del tablero sin arriesgar sumar puntos de más (ver
+  /// registrar_resultado_tablero_equipo en el backend).
+  Future<void> _reportarEquipo() async {
+    try {
+      await reportarResultadoEquipo(widget.partida);
     } catch (_) {}
   }
 
@@ -1023,6 +1035,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
         try {
           await cerrarPartida(partidaId: _partidaId, motivo: motivo, ganador: ganador);
           await _reportarTorneo(ganador);
+          await _reportarEquipo();
         } catch (_) {
           // Ya la cerró el rival por otro camino -- ok.
         }
@@ -1048,6 +1061,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     try {
       await cerrarPartida(partidaId: _partidaId, motivo: 'resignation', ganador: _opponentId);
       await _reportarTorneo(_opponentId);
+      await _reportarEquipo();
     } catch (_) {
       // Ya estaba terminada de otra forma (timeout casi simultáneo, etc).
     }

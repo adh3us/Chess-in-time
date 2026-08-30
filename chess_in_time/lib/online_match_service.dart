@@ -221,3 +221,74 @@ Future<Map<String, dynamic>> iniciarPartidaPrivada(String salaId) async {
       .rpc('iniciar_partida_privada', params: {'p_sala_id': salaId});
   return Map<String, dynamic>.from(result as Map);
 }
+
+/// ---------------------------------------------------------------------------
+/// Fase 7: modo Equipos (N vs N, tableros independientes)
+///
+/// Cada jugador de un equipo juega su propio tablero 1v1 normal contra
+/// alguien del equipo rival -- se suman los resultados de todos los
+/// tableros para definir qué equipo ganó. El emparejamiento es por cola
+/// automática (mismo mecanismo que Ranked 1v1, pero de a grupos).
+/// ---------------------------------------------------------------------------
+
+/// Llama a chess_in_time.buscar_partida_equipo(modalidad, tamanoEquipo). Si
+/// ya había suficientes jugadores esperando esa combinación, devuelve el
+/// partido de equipos ya armado (con los dos planteles); si no, deja al que
+/// llama en la cola y devuelve null -- hay que seguir esperando por polling.
+Future<Map<String, dynamic>?> buscarPartidaEquipo(String modalidad, int tamanoEquipo) async {
+  final result = await supabase.schema('chess_in_time').rpc('buscar_partida_equipo', params: {
+    'p_modalidad': modalidad,
+    'p_tamano_equipo': tamanoEquipo,
+  });
+  if (result == null) return null;
+  final partidaEquipo = Map<String, dynamic>.from(result as Map);
+  if (partidaEquipo['id'] == null) return null;
+  return partidaEquipo;
+}
+
+Future<void> cancelarBusquedaEquipo() async {
+  await supabase.schema('chess_in_time').rpc('cancelar_busqueda_equipo');
+}
+
+/// El tablero propio (jugador_blancas o jugador_negras soy yo) dentro de un
+/// partido de equipos -- cada jugador tiene el suyo, distinto al de sus
+/// compañeros y rivales.
+Future<Map<String, dynamic>?> miTableroDeEquipo(String partidaEquipoId) async {
+  final uid = supabase.auth.currentUser!.id;
+  final result = await supabase
+      .schema('chess_in_time')
+      .from('partidas')
+      .select()
+      .eq('equipo_partida_id', partidaEquipoId)
+      .or('jugador_blancas.eq.$uid,jugador_negras.eq.$uid')
+      .maybeSingle();
+  if (result == null) return null;
+  return Map<String, dynamic>.from(result);
+}
+
+/// Estado actual del partido de equipos (puntaje agregado, si ya terminó),
+/// para el polling de EquiposLobbyScreen y la pantalla de fin de partida.
+Future<Map<String, dynamic>?> obtenerPartidaEquipo(String partidaEquipoId) async {
+  final result = await supabase
+      .schema('chess_in_time')
+      .from('partidas_equipo')
+      .select()
+      .eq('id', partidaEquipoId)
+      .maybeSingle();
+  if (result == null) return null;
+  return Map<String, dynamic>.from(result);
+}
+
+/// Fase 7: si `partida` viene de un tablero de un partido de Equipos
+/// (equipo_partida_id no nulo), suma su resultado al puntaje agregado del
+/// partido -- si `partida` es de otro origen (matchmaking libre, torneo,
+/// privada), no hace nada. A diferencia de reportarResultadoTorneo(), acá no
+/// hay problema en que la llamen los dos jugadores del tablero: el cálculo
+/// se rehace entero cada vez, nunca duplica puntos.
+Future<void> reportarResultadoEquipo(Map<String, dynamic> partida) async {
+  final equipoPartidaId = partida['equipo_partida_id'] as String?;
+  if (equipoPartidaId == null) return;
+  await supabase.schema('chess_in_time').rpc('registrar_resultado_tablero_equipo', params: {
+    'p_partida_id': partida['id'],
+  });
+}
