@@ -97,6 +97,16 @@ class FischerClock {
       if (remainingOf(active) <= Duration.zero && _running) {
         _running = false;
         _timer?.cancel();
+        // remainingOf() calcula el tiempo restante al vuelo mientras corre,
+        // pero nunca lo vuelve a guardar en whiteRemaining/blackRemaining --
+        // sin esto, una vez parado el reloj queda mostrando el valor de la
+        // última jugada (ej: "00:02") en vez del 00:00 real que gatilló el
+        // tiempo agotado.
+        if (active == PieceColor.white) {
+          whiteRemaining = Duration.zero;
+        } else {
+          blackRemaining = Duration.zero;
+        }
         onTimeout(active);
       }
       onTick();

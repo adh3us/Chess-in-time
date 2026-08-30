@@ -29,7 +29,13 @@ Future<Map<String, dynamic>?> buscarPartida(String modalidad) async {
       .schema('chess_in_time')
       .rpc('buscar_partida', params: {'p_modalidad': modalidad});
   if (result == null) return null;
-  return Map<String, dynamic>.from(result as Map);
+  final partida = Map<String, dynamic>.from(result as Map);
+  // Cuando la función SQL no encuentra rival, "no hay partida" a veces
+  // viaja como una fila con todos los campos en null (en vez de un null
+  // limpio) -- lo tratamos igual que un null real, si no el resto del
+  // código intenta armar una partida vacía y revienta al leer el id.
+  if (partida['id'] == null) return null;
+  return partida;
 }
 
 Future<void> cancelarBusqueda() async {
