@@ -14,6 +14,7 @@ class ChessInTimeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Chess in Time',
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       home: const ChessGameScreen(),
     );
   }
