@@ -31,22 +31,34 @@ const String supabaseAnonKey =
 /// el usuario cuando el navegador vuelve a la app.
 final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-Future<void> initSupabase() async {
+/// Clave global del Navigator, para poder abrir una pantalla nueva (Fase 6:
+/// deep link de un cruce de torneo de Gameros) sin importar en qué pantalla
+/// esté el usuario en ese momento -- mismo motivo que rootScaffoldMessengerKey.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> initSupabase({void Function(Uri uri)? onTorneoDeepLink}) async {
   await Supabase.initialize(
     url: supabaseUrl,
     publishableKey: supabaseAnonKey,
     authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
   );
-  _listenForAuthDeepLinks();
+  _listenForAuthDeepLinks(onTorneoDeepLink: onTorneoDeepLink);
 }
 
 SupabaseClient get supabase => Supabase.instance.client;
 
-void _listenForAuthDeepLinks() {
+void _listenForAuthDeepLinks({void Function(Uri uri)? onTorneoDeepLink}) {
   final appLinks = AppLinks();
 
   Future<void> handle(Uri? uri) async {
     if (uri == null || uri.scheme != 'io.supabase.chessintime') return;
+    // Fase 6: el mismo esquema también trae el deep link de un cruce de
+    // torneo de Gameros (io.supabase.chessintime://torneo?...) -- se
+    // distingue por el host, y no tiene nada que ver con el login.
+    if (uri.host == 'torneo') {
+      onTorneoDeepLink?.call(uri);
+      return;
+    }
     // Justo al volver del navegador puede haber un corte de red de un
     // instante (reconexión de WiFi, etc.). AuthRetryableFetchException es
     // la forma en que Supabase marca ese tipo de error de red como algo

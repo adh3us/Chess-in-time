@@ -15,11 +15,37 @@ void _reportFatalError(Object error, [StackTrace? stack]) {
   );
 }
 
+/// Fase 6: deep link de un cruce de torneo de Gameros
+/// (io.supabase.chessintime://torneo?partida=...&rival=...&insc_propia=...
+/// &insc_rival=...&tipo=...) -- lo abre Gameros desde el botón "Jugar en
+/// Chess in Time" en la pantalla del torneo. Si falta algún parámetro (link
+/// corrupto o de una versión vieja de Gameros), se ignora en vez de reventar.
+void _handleTorneoDeepLink(Uri uri) {
+  final params = uri.queryParameters;
+  final torneoPartidaId = params['partida'];
+  final rivalUsuarioId = params['rival'];
+  final inscPropia = params['insc_propia'];
+  final inscRival = params['insc_rival'];
+  final tipoLlave = params['tipo'];
+  if (torneoPartidaId == null || rivalUsuarioId == null || inscPropia == null || inscRival == null || tipoLlave == null) {
+    return;
+  }
+  rootNavigatorKey.currentState?.push(MaterialPageRoute(
+    builder: (_) => TorneoMatchScreen(
+      torneoPartidaId: torneoPartidaId,
+      rivalUsuarioId: rivalUsuarioId,
+      inscPropia: inscPropia,
+      inscRival: inscRival,
+      tipoLlave: tipoLlave,
+    ),
+  ));
+}
+
 void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
-      await initSupabase();
+      await initSupabase(onTorneoDeepLink: _handleTorneoDeepLink);
       final previousOnError = FlutterError.onError;
       FlutterError.onError = (details) {
         previousOnError?.call(details);
@@ -37,6 +63,7 @@ class ChessInTimeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Chess in Time',
+      navigatorKey: rootNavigatorKey,
       scaffoldMessengerKey: rootScaffoldMessengerKey,
       home: const ChessGameScreen(),
     );

@@ -934,9 +934,22 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     final ganador = loser == _myColor ? _opponentId : supabase.auth.currentUser!.id;
     try {
       await cerrarPartida(partidaId: _partidaId, motivo: 'timeout', ganador: ganador);
+      await _reportarTorneo(ganador);
     } catch (_) {
       // El rival ya la cerró (por ejemplo, detectó el mismo timeout primero) -- ok, ignoramos.
     }
+  }
+
+  /// Fase 6: si esta partida viene de un cruce de torneo de Gameros, avisa
+  /// el resultado allá también -- si no viene de un torneo (matchmaking
+  /// libre), reportarResultadoTorneo() no hace nada. Va separado del try/catch
+  /// de cerrarPartida() para no confundir un fallo acá con "ya la cerró el
+  /// rival" -- en el peor caso el torneo no avanza solo y hay que revisarlo
+  /// a mano, pero la partida en sí ya quedó cerrada y con ELO actualizado.
+  Future<void> _reportarTorneo(String? ganador) async {
+    try {
+      await reportarResultadoTorneo(widget.partida, ganador);
+    } catch (_) {}
   }
 
   Future<void> _selectSquare(Position pos) async {
@@ -1035,6 +1048,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
         }
         try {
           await cerrarPartida(partidaId: _partidaId, motivo: motivo, ganador: ganador);
+          await _reportarTorneo(ganador);
         } catch (_) {
           // Ya la cerró el rival por otro camino -- ok.
         }
@@ -1059,6 +1073,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     if (confirmed != true) return;
     try {
       await cerrarPartida(partidaId: _partidaId, motivo: 'resignation', ganador: _opponentId);
+      await _reportarTorneo(_opponentId);
     } catch (_) {
       // Ya estaba terminada de otra forma (timeout casi simultáneo, etc).
     }
@@ -1186,6 +1201,100 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
       gradient: gradient,
       borderRadius: theme.squareCornerRadius > 0 ? BorderRadius.circular(theme.squareCornerRadius) : null,
       border: isSelected ? Border.all(color: Colors.blueAccent, width: 2) : null,
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------------
+/// CHESS IN TIME — Fase 6: partida de torneo (deep link desde Gameros)
+///
+/// A diferencia de OnlineLobbyScreen (matchmaking libre, rival al azar), acá
+/// los dos jugadores ya están decididos de antemano por el cruce del
+/// bracket de Gameros -- solo hay que armar (o engancharse a) la partida
+/// puntual de ese cruce y arrancar a jugar. Al terminar, el resultado se
+/// reporta solo de vuelta a Gameros (ver reportarResultadoTorneo).
+/// ---------------------------------------------------------------------------
+class TorneoMatchScreen extends StatefulWidget {
+  final String torneoPartidaId;
+  final String rivalUsuarioId;
+  final String inscPropia;
+  final String inscRival;
+  final String tipoLlave;
+
+  const TorneoMatchScreen({
+    super.key,
+    required this.torneoPartidaId,
+    required this.rivalUsuarioId,
+    required this.inscPropia,
+    required this.inscRival,
+    required this.tipoLlave,
+  });
+
+  @override
+  State<TorneoMatchScreen> createState() => _TorneoMatchScreenState();
+}
+
+class _TorneoMatchScreenState extends State<TorneoMatchScreen> {
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _entrar());
+  }
+
+  Future<void> _entrar() async {
+    if (supabase.auth.currentUser == null) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()));
+      if (!mounted) return;
+      if (supabase.auth.currentUser == null) {
+        Navigator.of(context).pop();
+        return;
+      }
+    }
+    try {
+      final partida = await iniciarPartidaTorneo(
+        torneoPartidaId: widget.torneoPartidaId,
+        rivalUsuarioId: widget.rivalUsuarioId,
+        inscPropia: widget.inscPropia,
+        inscRival: widget.inscRival,
+        tipoLlave: widget.tipoLlave,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => OnlineGameScreen(partida: partida)),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _error = 'No se pudo iniciar la partida del torneo: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Partida de torneo')),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: _error != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SelectableText(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Volver')),
+                  ],
+                )
+              : const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 24),
+                    Text('Preparando la partida del torneo...'),
+                  ],
+                ),
+        ),
+      ),
     );
   }
 }
