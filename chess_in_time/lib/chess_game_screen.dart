@@ -5,6 +5,7 @@ import 'fischer_clock.dart';
 import 'board_theme.dart';
 import 'piece_icons.dart';
 import 'auth_gate.dart';
+import 'gameros_profile_service.dart';
 import 'online_match_service.dart';
 import 'supabase_config.dart';
 
@@ -787,6 +788,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   bool _terminada = false;
   String? _endMessage;
   bool _sending = false;
+  String? _opponentName;
 
   @override
   void initState() {
@@ -798,6 +800,14 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     _opponentId = _myColor == PieceColor.white ? row['jugador_negras'] as String : row['jugador_blancas'] as String;
     _engine = LocalChessEngine();
     _applyRow(row);
+    // Nombre heredado del perfil de Gameros del rival, para no mostrar un
+    // "Turno del rival" genérico -- si el RLS no deja leerlo, no pasa nada,
+    // se sigue viendo el genérico.
+    obtenerPerfilGameros(_opponentId).then((perfil) {
+      if (mounted && perfil?.nombreParaMostrar != null) {
+        setState(() => _opponentName = perfil!.nombreParaMostrar);
+      }
+    });
     // Se refresca por polling en vez de Realtime -- más simple y usa el
     // mismo camino REST que ya funciona para todo lo demás.
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pollPartida());
@@ -1067,7 +1077,8 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
     final gameOver = _gameOver;
     final status = _statusMessage();
     final myTurn = !gameOver && _engine.turn == _myColor;
-    final title = gameOver ? 'Partida terminada' : (myTurn ? 'Tu turno' : 'Turno del rival');
+    final rivalLabel = _opponentName ?? 'rival';
+    final title = gameOver ? 'Partida terminada' : (myTurn ? 'Tu turno' : 'Turno de $rivalLabel');
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),

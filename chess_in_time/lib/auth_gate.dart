@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'gameros_profile_service.dart';
 import 'online_match_service.dart';
 import 'supabase_config.dart';
 
@@ -61,9 +62,7 @@ class _AccountScreenState extends State<AccountScreen> {
             padding: const EdgeInsets.all(24),
             children: session != null
                 ? [
-                    const Icon(Icons.account_circle, size: 64),
-                    const SizedBox(height: 12),
-                    Text(session.user.email ?? session.user.id, textAlign: TextAlign.center),
+                    _GamerosIdentity(userId: session.user.id, email: session.user.email),
                     const SizedBox(height: 24),
                     Center(child: OutlinedButton(onPressed: _signOut, child: const Text('Cerrar sesión'))),
                     const SizedBox(height: 32),
@@ -93,6 +92,40 @@ class _AccountScreenState extends State<AccountScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Muestra el nombre y la foto heredados del perfil de Gameros (public.usuarios)
+/// en vez del email crudo -- Chess in Time no pide un nombre propio, usa
+/// directo el mismo perfil que ya armaste en Gameros. Si todavía no completaste
+/// tu perfil ahí (usuario nuevo), cae de vuelta al email sin romper nada.
+class _GamerosIdentity extends StatelessWidget {
+  final String userId;
+  final String? email;
+  const _GamerosIdentity({required this.userId, required this.email});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<GamerosProfile?>(
+      future: obtenerPerfilGameros(userId),
+      builder: (context, snapshot) {
+        final perfil = snapshot.data;
+        final nombre = perfil?.nombreParaMostrar ?? email ?? userId;
+        return Column(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundImage: perfil?.fotoUrl != null ? NetworkImage(perfil!.fotoUrl!) : null,
+              child: perfil?.fotoUrl == null ? const Icon(Icons.account_circle, size: 56) : null,
+            ),
+            const SizedBox(height: 12),
+            Text(nombre, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+            if (perfil?.username != null && perfil!.nombreDisplay != null)
+              Text('@${perfil.username}', style: TextStyle(color: Colors.grey.shade600)),
+          ],
+        );
+      },
     );
   }
 }
