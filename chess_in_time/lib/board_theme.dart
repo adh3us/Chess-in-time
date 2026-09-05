@@ -15,6 +15,9 @@ import 'package:flutter/material.dart';
 
 enum BoardVisual { clasico, verde, madera, azul, contraste }
 
+/// Notificador reactivo global para el tema activo del tablero, configurable desde SettingsScreen.
+final ValueNotifier<BoardVisual> activeBoardTheme = ValueNotifier<BoardVisual>(BoardVisual.clasico);
+
 class BoardThemeConfig {
   final String label;
   final String description;

@@ -81,6 +81,9 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } else {
         await supabase.auth.signInWithPassword(email: email, password: password);
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
       }
     } on AuthException catch (e) {
       _showMessage(e.message);
@@ -115,6 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(

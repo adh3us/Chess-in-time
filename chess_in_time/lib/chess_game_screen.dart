@@ -113,7 +113,7 @@ class _ChessGameScreenState extends State<ChessGameScreen> {
   Position? _selected;
   List<Move> _legalForSelected = [];
   _ForcedEnd? _forcedEnd;
-  BoardVisual _visual = BoardVisual.clasico;
+  BoardVisual _visual = activeBoardTheme.value;
   Move? _lastMove;
 
   @override

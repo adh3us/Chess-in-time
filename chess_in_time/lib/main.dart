@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'auth_gate.dart';
 import 'chess_game_screen.dart';
+import 'home_navigation_screen.dart';
 import 'private_match_screen.dart';
 import 'supabase_config.dart';
 
@@ -78,8 +79,8 @@ class ChessInTimeApp extends StatelessWidget {
       title: 'Chess in Time',
       navigatorKey: rootNavigatorKey,
       scaffoldMessengerKey: rootScaffoldMessengerKey,
-      // Fase 7: login obligatorio como primera pantalla -- ver auth_gate.dart.
-      home: const AuthGate(),
+      // Pantalla inicial estilo Clash Royale con 6 módulos y acceso a Gameros.
+      home: const HomeNavigationScreen(),
     );
   }
 }
