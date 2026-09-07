@@ -63,47 +63,48 @@ Future<Map<String, dynamic>> iniciarPartidaTorneo({
   return Map<String, dynamic>.from(result as Map);
 }
 
-/// Fase 6: si `partida` viene de un cruce de torneo (torneo_partida_id no
-/// nulo), reporta el resultado de vuelta a Gameros con la misma función que
-/// ya usa el organizador/árbitro -- ahora también acepta la carga si viene
-/// de uno de los dos jugadores Y existe esta partida ya terminada con un
-/// resultado que coincide (ver chess_in_time_resultado_verificado en el
-/// backend de Gameros). Si `partida` es de matchmaking libre (sin torneo),
-/// no hace nada.
-///
-/// Se llama solo desde el cliente cuyo cerrarPartida() recién tuvo éxito --
-/// el otro lado, que la encuentra ya terminada por polling, nunca reporta,
-/// así evitamos una carrera de los dos reportando el mismo cruce a la vez.
+/// Fase 6+: si `partida` viene de un cruce de torneo (torneo_partida_id no
+/// nulo), reporta el resultado de vuelta a Gameros usando el contrato unificado
+/// oficial `public.reportar_resultado_cruce_torneo`.
+/// Si `partida` es de matchmaking libre (sin torneo), no hace nada.
 Future<void> reportarResultadoTorneo(Map<String, dynamic> partida, String? ganadorUsuarioId) async {
   final torneoPartidaId = partida['torneo_partida_id'] as String?;
   if (torneoPartidaId == null) return;
 
-  final tipoLlave = partida['torneo_tipo_llave'] as String;
-  final inscBlancas = partida['torneo_insc_blancas'] as String;
-  final inscNegras = partida['torneo_insc_negras'] as String;
-  final blancas = partida['jugador_blancas'] as String;
+  final inscBlancas = partida['torneo_insc_blancas'] as String?;
+  final inscNegras = partida['torneo_insc_negras'] as String?;
+  final blancas = partida['jugador_blancas'] as String?;
 
   final String? inscGanador =
       ganadorUsuarioId == null ? null : (ganadorUsuarioId == blancas ? inscBlancas : inscNegras);
+  final bool esEmpate = (ganadorUsuarioId == null);
 
-  if (tipoLlave == 'eliminacion_directa' || tipoLlave == 'eliminacion_doble') {
-    // No hay tablas en estos dos formatos -- si empataron, no hay forma de
-    // cargar ese resultado todavía (hace falta desempate, ver charla con Lucas).
-    if (inscGanador == null) return;
-    final rpc = tipoLlave == 'eliminacion_directa' ? 'cargar_resultado' : 'cargar_resultado_doble';
-    await supabase.rpc(rpc, params: {'p_partida_id': torneoPartidaId, 'p_ganador_inscripcion_id': inscGanador});
-    return;
-  }
+  await supabase.rpc('reportar_resultado_cruce_torneo', params: {
+    'p_partida_id': torneoPartidaId,
+    'p_ganador_inscripcion_id': inscGanador,
+    'p_empate': esEmpate,
+    'p_metadata': {
+      'juego': 'chess_in_time',
+      'chess_partida_id': partida['id'],
+      'motivo': partida['motivo_fin'] ?? 'cierre_cliente',
+    },
+  });
+}
 
-  // Sistema Suizo / Todos contra Todos: la función de Gameros pide
-  // 'gana_a'/'gana_b'/'empate' relativo a inscripcion_a_id del cruce, no a
-  // blancas/negras de acá -- hay que consultar cuál es cuál.
-  final torneoPartida =
-      await supabase.from('partidas').select('inscripcion_a_id').eq('id', torneoPartidaId).single();
-  final esGanadorA = inscGanador != null && inscGanador == torneoPartida['inscripcion_a_id'];
-  final resultado = inscGanador == null ? 'empate' : (esGanadorA ? 'gana_a' : 'gana_b');
-  final rpc = tipoLlave == 'sistema_suizo' ? 'cargar_resultado_suizo' : 'cargar_resultado_todos_contra_todos';
-  await supabase.rpc(rpc, params: {'p_partida_id': torneoPartidaId, 'p_resultado': resultado});
+/// Permite a un jugador confirmar el resultado de un cruce de torneo
+/// cuando se requiere doble confirmación o cuando la partida ya estaba
+/// cerrada en el backend local.
+Future<bool> confirmarResultadoTorneo({
+  required String partidaId,
+  required String motivo,
+  String? ganador,
+}) async {
+  final result = await supabase.schema('chess_in_time').rpc('confirmar_resultado_torneo', params: {
+    'p_partida_id': partidaId,
+    'p_motivo': motivo,
+    'p_ganador': ganador,
+  });
+  return result == true;
 }
 
 /// Guarda el estado de la partida después de una jugada propia: posición,

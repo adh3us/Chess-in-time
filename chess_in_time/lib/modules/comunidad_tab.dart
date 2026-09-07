@@ -29,7 +29,7 @@ class ComunidadTab extends StatelessWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.pinkAccent.withValues(alpha: 0.2),
+                        color: Colors.pinkAccent.withOpacity(0.2),
                         blurRadius: 20,
                         spreadRadius: 2,
                       ),

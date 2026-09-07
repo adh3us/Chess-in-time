@@ -85,7 +85,7 @@ class _HomeNavigationScreenState extends State<HomeNavigationScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
                   ),
                   child: const Icon(Icons.castle_rounded, color: Color(0xFF10B981), size: 22),
                 ),
@@ -197,7 +197,7 @@ class _HomeNavigationScreenState extends State<HomeNavigationScreen> {
         border: Border(top: BorderSide(color: Colors.blueGrey.shade900, width: 1.5)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
+            color: Colors.black.withOpacity(0.6),
             blurRadius: 12,
             offset: const Offset(0, -3),
           ),
@@ -243,7 +243,7 @@ class _HomeNavigationScreenState extends State<HomeNavigationScreen> {
                             boxShadow: [
                               if (isSelected)
                                 BoxShadow(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.5),
+                                  color: const Color(0xFF10B981).withOpacity(0.5),
                                   blurRadius: 10,
                                   spreadRadius: 1,
                                 ),

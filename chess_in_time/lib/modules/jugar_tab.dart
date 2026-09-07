@@ -139,10 +139,10 @@ class _JugarTabState extends State<JugarTab> {
           colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFBBF24).withValues(alpha: 0.3)),
+        border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
+            color: Colors.black.withOpacity(0.4),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -163,7 +163,7 @@ class _JugarTabState extends State<JugarTab> {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.amber.withValues(alpha: 0.4),
+                      color: Colors.amber.withOpacity(0.4),
                       blurRadius: 8,
                     ),
                   ],
@@ -244,7 +244,7 @@ class _JugarTabState extends State<JugarTab> {
             children: [
               Text('$minElo', style: TextStyle(color: Colors.blueGrey.shade400, fontSize: 11)),
               Text('Faltan ~4 victorias para la siguiente Arena',
-                  style: TextStyle(color: Colors.emeraldColor(), fontSize: 11, fontWeight: FontWeight.w600)),
+                  style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.w600)),
               Text('$maxElo', style: TextStyle(color: Colors.blueGrey.shade400, fontSize: 11)),
             ],
           ),
@@ -259,7 +259,7 @@ class _JugarTabState extends State<JugarTab> {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF10B981).withValues(alpha: 0.35),
+            color: const Color(0xFF10B981).withOpacity(0.35),
             blurRadius: 18,
             offset: const Offset(0, 6),
           ),
@@ -279,7 +279,7 @@ class _JugarTabState extends State<JugarTab> {
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2),
+              border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -287,7 +287,7 @@ class _JugarTabState extends State<JugarTab> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.2),
+                    color: Colors.black.withOpacity(0.2),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.timer_rounded, color: Colors.white, size: 28),
@@ -336,7 +336,7 @@ class _JugarTabState extends State<JugarTab> {
               side: BorderSide(color: Colors.blueGrey.shade700),
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              backgroundColor: const Color(0xFF1E293B).withValues(alpha: 0.7),
+              backgroundColor: const Color(0xFF1E293B).withOpacity(0.7),
             ),
             onPressed: () {
               Navigator.of(context).push(
@@ -355,7 +355,7 @@ class _JugarTabState extends State<JugarTab> {
               side: BorderSide(color: Colors.blueGrey.shade700),
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              backgroundColor: const Color(0xFF1E293B).withValues(alpha: 0.7),
+              backgroundColor: const Color(0xFF1E293B).withOpacity(0.7),
             ),
             onPressed: () {
               Navigator.of(context).push(
@@ -570,8 +570,4 @@ class _JugarTabState extends State<JugarTab> {
       ),
     );
   }
-}
-
-extension ColorExtensions on Colors {
-  static Color emeraldColor() => const Color(0xFF34D399);
 }

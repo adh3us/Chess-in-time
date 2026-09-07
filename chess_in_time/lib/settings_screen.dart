@@ -44,7 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final mensaje = '¡Jugá ajedrez conmigo en Chess in Time (by Gameros)!\n'
         'Mi ID de jugador es: $id\n'
         'Descargá la app: https://github.com/adh3us/Chess-in-time/releases/download/latest-apk/app-release.apk';
-    SharePlus.instance.share(ShareParams(text: mensaje, subject: 'Desafío en Chess in Time'));
+    SharePlus.instance.share(ShareParams(text: mensaje));
   }
 
   @override
@@ -416,7 +416,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: colores.map((c) {
         final (color, nombre) = c;
-        final isSelected = color.toARGB32() == _accentColor.toARGB32();
+        final isSelected = color.value == _accentColor.value;
         return GestureDetector(
           onTap: () => setState(() => _accentColor = color),
           child: Column(
@@ -433,7 +433,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   boxShadow: [
                     if (isSelected)
-                      BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 10, spreadRadius: 1),
+                      BoxShadow(color: color.withOpacity(0.5), blurRadius: 10, spreadRadius: 1),
                   ],
                 ),
                 child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
