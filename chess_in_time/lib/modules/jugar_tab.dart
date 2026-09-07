@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../chess_game_screen.dart';
 import '../fischer_clock.dart';
 import '../online_match_service.dart';

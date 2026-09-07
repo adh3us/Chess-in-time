@@ -1,6 +1,7 @@
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+export 'package:supabase_flutter/supabase_flutter.dart';
 
 /// ---------------------------------------------------------------------------
 /// CHESS IN TIME — Conexión a Supabase (Fase 5)
